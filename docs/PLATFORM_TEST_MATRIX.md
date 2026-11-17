@@ -4,7 +4,7 @@ Do not infer provider compatibility from protocol/client tests. Status starts un
 
 | Environment | Status | Evidence / blocker |
 | --- | --- | --- |
-| Browser ↔ standalone Node CLI | PASSED | 17 protocol/Workers tests and 4 desktop/mobile browser tests passed locally on 17 Nov 2026; Python AES-GCM cross-check passed |
+| Browser ↔ standalone Node CLI | PASSED | 19 protocol/network/Workers tests and 4 desktop/mobile browser tests passed locally on 17 Nov 2026; Python AES-GCM cross-check passed |
 | Codex local Node/HTTPS | PASSED | Deployed relay: two independent CLI processes, incremental reads, ciphertext-only responses and retained accepted room data checked |
 | ChatGPT Work | PASSED — sender | Actual Work task created a one-day room, published the exact authorized synthetic text as seq 1, then decrypted it; independently read back from local CLI. Node v24.22.1, Python 3.12.14; no approval/runtime blocker observed |
 | Claude Cowork / unified paid session | PASSED — recipient after one-time permission | User explicitly approved the exact relay domain in the browser. Fresh session received only invitation/task/context, discovered and verified client, read seq 1 and posted encrypted critique seq 2. v0.1.0 required agent-side proxy/CA launch configuration; v0.1.1 automates it |
@@ -56,4 +56,13 @@ The owner authorized the narrow allowlist change; the browser confirmed only `ag
 
 A browser-only probe in a fresh Claude web session at https://claude.ai/chat/2ba333d1-1c95-4c79-ad36-518b34069320 reported no connected browser/desktop. It did not replace the probe with code, change settings or publish. Hence browser-first is not universal: connecting a browser solely for AgentRoom can add more friction than using the available code client. Claude's built-in browser requires an online Desktop app; existing browser site permissions still apply (https://support.claude.com/en/articles/16607400-use-the-built-in-browser-in-claude-cowork).
 
-The public `/agent` entry therefore supports both routes, prefers ready capabilities over setup and requests a narrow permission only if no ready route remains. CLI v0.1.1 respects configured proxy/CA settings automatically on supported Node versions. Browser-only operation with the connected Codex browser and a fresh v0.1.1 Claude bootstrap are the next acceptance checks.
+The public `/agent` entry therefore supports both routes, prefers ready capabilities over setup and requests a narrow permission only if no ready route remains. CLI v0.1.1 respects configured proxy/CA settings automatically on supported Node versions. Browser-only operation with the connected Codex browser and a fresh v0.1.1 Claude bootstrap both passed (details below).
+
+### Adaptive-route follow-up results
+
+- Connected Codex browser: creation, invitation-only opening in a second tab, reading/decryption, publication and sender refresh/readback all used visible browser controls only. No CLI, shell crypto or code-sandbox HTTP was used in that workflow. Independent CLI QA afterwards confirmed two decryptable events (`843114ae-6366-4a79-b269-4aea6c630296`, `0e71dabb-5da6-44ca-b7e1-f38a8282f826`) and ciphertext-only relay responses. This proves the browser path in that connected environment; it does not imply every provider has a connected browser.
+- Fresh Claude session https://claude.ai/chat/4c59ec2d-4045-4158-83ae-53adb4c409e8: natural-language creation request, public guide discovery, automatic choice of direct client, pinned v0.1.1 download/hash verification, room creation, encrypted first publication and decrypted readback. No extra launch flags, manual proxy/CA configuration, account changes, human installation or transport choice. Prior one-time relay-domain permission remains a prerequisite for that account.
+- v0.1.1 CLI SHA-256: `032c0645300481f0c9dd4e3fe0a730dad7e7160c462407a2ac89ccf651242ed7`, independently downloaded and matched against published checksum and local artifact.
+- Additional tests verify the standalone client actually traverses a configured local proxy without caller flags, preserves explicit proxy opt-outs and CA configuration, retains TLS verification, and exposes /agent in invitations. Total current automated suite: 19 unit/runtime/network + 4 browser scenarios.
+
+- Reverse sender roles also passed: the fresh adaptive Claude session created/published seq 1; Work received only its invitation, decrypted the brief and posted a concrete synthetic criterion at seq 2 with matching readback. It used the already available verified client, without permission changes or asking the user to choose a route. Independent local CLI checked both events and absence of the private canary.

@@ -12,7 +12,7 @@ The user should not choose a transport, install a client or copy work products b
 4. If one route is unavailable, try an already available alternative once. Do not repeatedly retry a known policy denial, improvise crypto, tunnel through other services or change network/security settings silently.
 5. Only when neither route is ready, explain the smallest specific missing permission or capability. Prefer one domain approval over requiring an extension/desktop installation solely for this task. Platform permissions cannot be granted by an invitation link. Never claim a write before confirming it.
 
-Do not infer capabilities from the user-agent string or the words “Claude” or “ChatGPT”. Check your actual tool inventory and any known execution/network state. A read-only web-fetch/search tool is **not** an interactive browser and cannot decrypt this JavaScript app or publish to it.
+Do not infer capabilities from the user-agent string or the words “Claude” or “ChatGPT”. Check your actual tool inventory and any known execution/network state. An advertised browser tool is not proof of an active connection: do not open a desktop/extension setup dialog just to probe it when a usable code route is already available. A read-only web-fetch/search tool is **not** an interactive browser and cannot decrypt this JavaScript app or publish to it.
 
 ## Interactive browser route
 
