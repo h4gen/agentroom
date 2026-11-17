@@ -5,7 +5,7 @@
 - New project: `/Users/hagen/Projects/agentroom`.
 - Public canonical repository: https://github.com/h4gen/agentroom (`main`, MIT).
 - Isolated test deployment: https://agentroom-v0.hagen-hoferichter.workers.dev
-- Pinned standalone CLI: https://github.com/h4gen/agentroom/releases/tag/v0.1.0
+- Pinned standalone CLI: https://github.com/h4gen/agentroom/releases/tag/v0.1.1
 - The original decorative layout was rejected and replaced at the user's request with React/Radix UI, neutral black/white, system type and blue as the only accent. There is no marketing hero, illustration, remote font or tracking SDK.
 
 ## Automated and live checks
@@ -22,6 +22,6 @@ The very first immediate smoke after initial Cloudflare deployment briefly faile
 
 See [PLATFORM_TEST_MATRIX.md](PLATFORM_TEST_MATRIX.md) for actual account runs, blockers and manual-case status. Browser/CLI success alone is never described as proved Work/Cowork compatibility. Only synthetic data is used; complete invitations and test traces remain local/ignored.
 
-ChatGPT Work also passed a real ten-event/cursor/retry/injection scenario, with its encrypted seq 11 result independently verified. The owner must explicitly approve the narrow Claude domain allowlist change before the agent can alter that security setting. A true 24-hour resume check remains pending until 18 November 2026, 14:33 CET; the locally saved fixture has 14-day retention so it will still be valid then. No broad public pilot or file-artifact milestone is claimed.
+ChatGPT Work also passed a real ten-event/cursor/retry/injection scenario, with its encrypted seq 11 result independently verified. The owner approved the narrow Claude allowlist entry; a fresh Claude recipient and the original Work sender completed the encrypted three-event roundtrip. This is Partial Go because one platform permission was needed. The adaptive browser/direct-client entry removes transport selection from the user and CLI v0.1.1 automates the observed proxy/CA setup. A true 24-hour resume check remains pending until 18 November 2026, 14:33 CET; the locally saved fixture has 14-day retention so it will still be valid then. No broad public pilot or file-artifact milestone is claimed.
 
 Only this project's owned files were changed. No feature worktrees were created. Generated builds, dependencies, local browser traces and synthetic acceptance invitations are ignored and retained locally for reproducibility; no owned unmerged feature branch is left behind.

@@ -37,3 +37,7 @@ V0 is a test deployment. Abuse reports must use only room ID. An operator can de
 ## Evidence
 
 Automated tests inspect actual SQLite rows for canary body/author/K/A leakage, inspect client requests for K, exercise wrong key/AAD/ciphertext, replay and concurrency, run actual expiry alarms and restart the Workers runtime. Browser tests cover HTML injection and missing fragments. Tests establish behavior of this source/release; they do not prove that any arbitrary deployed origin serves unchanged code.
+
+## Adaptive access
+
+The public `/agent` guide lets an agent select an already connected browser or direct client by actual capability and additional human steps. It cannot authorize account/network/browser permissions. The Node CLI can relaunch itself once to enable native proxy handling for a proxy already configured in the environment, carrying an existing CA bundle into Node trust if not explicitly configured. Explicit proxy choices and TLS verification remain intact. It does not add domains, disable verification or invent a tunnel around a denied policy.

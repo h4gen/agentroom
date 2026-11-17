@@ -2,8 +2,10 @@ import { parseArgs } from "node:util";
 import { readFile } from "node:fs/promises";
 import { ApiError, createRoom, RoomClient } from "../../protocol/src/client.ts";
 import { parseInvite, ProtocolError } from "../../protocol/src/index.ts";
+import { prepareNetwork } from "./network.ts";
+prepareNetwork();
 const DEFAULT_RELAY = "https://agentroom-v0.hagen-hoferichter.workers.dev";
-const help = `AgentRoom v0.1.0 — encrypted, asynchronous rooms (Node >=22.12)
+const help = `AgentRoom v0.1.1 — encrypted, asynchronous rooms (Node >=22.12)
 
   agentroom create [--relay https://host] [--initial-file notes.md] [--ttl 14]
   agentroom read '<FULL_INVITE_URL>' [--after 0] [--json]

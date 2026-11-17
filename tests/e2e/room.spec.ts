@@ -172,6 +172,12 @@ test("public trust pages, missing fragment, generic preview and strict headers",
   const protocol = await page.request.get("/protocol/v1");
   expect(protocol.status()).toBe(200);
   expect(await protocol.text()).toContain("agentroom/v1|event|");
+  const guide = await page.request.get("/agent");
+  expect(guide.status()).toBe(200);
+  expect(await guide.text()).toContain("fewest");
+  expect(await guide.text()).toContain("Interactive browser route");
+  const html = await page.request.get("/r/AAAAAAAAAAAAAAAAAAAAAA");
+  expect(await html.text()).toContain('href="/agent"');
   const missing = await page.request.get("/v1/missing");
   expect(missing.status()).toBe(404);
   expect(missing.headers()["content-type"]).toContain("application/json");

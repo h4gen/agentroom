@@ -38,6 +38,7 @@ for (const route of [
   "/",
   "/security",
   "/protocol/v1",
+  "/agent",
   "/favicon.svg",
   "/r/AAAAAAAAAAAAAAAAAAAAAA",
 ]) {
@@ -135,7 +136,7 @@ try {
     { mode: 0o600 },
   );
   console.log(
-    "Live checks: 5 public routes, API errors/privacy headers, ciphertext-only response, two-process encrypted roundtrip and incremental reads passed.",
+    "Live checks: 6 public routes, API errors/privacy headers, ciphertext-only response, two-process encrypted roundtrip and incremental reads passed.",
   );
 } finally {
   await rm(dir, { recursive: true, force: true });

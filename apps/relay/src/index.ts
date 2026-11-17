@@ -9,6 +9,7 @@ import {
   validateEnvelope,
 } from "../../../packages/protocol/src/index.ts";
 import protocolDoc from "../../../docs/PROTOCOL_V1.md";
+import agentGuide from "../../../docs/AGENT_GUIDE.md";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -141,9 +142,12 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/protocol/v1" && request.method === "GET")
+      if (
+        ["/protocol/v1", "/agent"].includes(url.pathname) &&
+        request.method === "GET"
+      )
         return secure(
-          new Response(protocolDoc, {
+          new Response(url.pathname === "/agent" ? agentGuide : protocolDoc, {
             headers: {
               "Content-Type": "text/plain; charset=utf-8",
               "Cache-Control": "public, max-age=300",
@@ -428,7 +432,14 @@ export class Room extends DurableObject<Env> {
           const inserted = this.ctx.storage.sql
             .exec<{
               seq: number;
-            }>("INSERT INTO room_events(event_id,nonce,ciphertext,payload_digest,stored_at) VALUES(?,?,?,?,?) RETURNING seq", value.event_id, value.nonce, value.ciphertext, digest, new Date().toISOString())
+            }>(
+              "INSERT INTO room_events(event_id,nonce,ciphertext,payload_digest,stored_at) VALUES(?,?,?,?,?) RETURNING seq",
+              value.event_id,
+              value.nonce,
+              value.ciphertext,
+              digest,
+              new Date().toISOString(),
+            )
             .one();
           return { seq: inserted.seq, duplicate: false };
         });

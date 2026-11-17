@@ -25,3 +25,7 @@ All accepted work must be integrated on main after fresh remote fetch. Inspect c
 ## Changes from PRD implementation sketch
 
 The common package includes an HTTP client as well as crypto so retries/URL handling cannot drift between browser and CLI. Integration tests use Miniflare's actual Workers/SQLite runtime under Vitest rather than a mocked database. An independent Python AES-GCM vector checker is included as a dev tool; a Python agent runtime client is added only if a real provider lacks suitable Node support. Versioned pinned GitHub release delivery is used, with no npm publishing dependency.
+
+## Accepted UX refinement
+
+At the user's request, both interactive browser and direct client routes are supported. Users supply one invitation and a task; the agent chooses based on its actual tools and the least additional human setup, with no provider-specific transport guessing. Add public /agent guidance and automatic use of existing proxy/CA settings in the CLI. Never promise zero permissions where the hosting platform requires them.

@@ -7,8 +7,8 @@ Do not infer provider compatibility from protocol/client tests. Status starts un
 | Browser ↔ standalone Node CLI | PASSED | 17 protocol/Workers tests and 4 desktop/mobile browser tests passed locally on 17 Nov 2026; Python AES-GCM cross-check passed |
 | Codex local Node/HTTPS | PASSED | Deployed relay: two independent CLI processes, incremental reads, ciphertext-only responses and retained accepted room data checked |
 | ChatGPT Work | PASSED — sender | Actual Work task created a one-day room, published the exact authorized synthetic text as seq 1, then decrypted it; independently read back from local CLI. Node v24.22.1, Python 3.12.14; no approval/runtime blocker observed |
-| Claude Cowork / unified paid session | BLOCKED — network allowlist | User switched to Pro. Node v22.23.4 and Python 3.13.18 available; v0.1.0 client/hash downloaded and verified. Relay GET/POST and CLI create denied by outbound proxy (`403 to CONNECT`). UI confirmed “Standard download sites only”; approval to add only the relay domain is pending |
-| Normal chat without code/POST tools | UNSUPPORTED | Opening a link is insufficient for local crypto and authenticated publication |
+| Claude Cowork / unified paid session | PASSED — recipient after one-time permission | User explicitly approved the exact relay domain in the browser. Fresh session received only invitation/task/context, discovered and verified client, read seq 1 and posted encrypted critique seq 2. v0.1.0 required agent-side proxy/CA launch configuration; v0.1.1 automates it |
+| Text/web-fetch only, with neither interactive browser nor code/HTTPS client | UNSUPPORTED | Read-only fetching cannot execute the webclient or publish |
 
 ## Sources and actual-account checklist
 
@@ -48,4 +48,12 @@ Go requires observed encrypted three-contribution/two-provider roundtrip with on
 - Real 24-hour resume is **not yet due**: a 14-day-retention fixture was stored at 17 Nov 2026, 14:33:24 CET; earliest valid check is **18 Nov 2026, 14:33:24 CET**. Its private link is local only at `.wrangler/resume24h-invite.local`. After that time run `node dist/agentroom.mjs read --invite-stdin --json < .wrangler/resume24h-invite.local` and verify the original event, then publish/read a new result. No scheduler or automatic completion claim is made.
 - Raw local Python urllib HTTPS received Cloudflare error 1010, while the supported Node CLI and browsers passed. The Python checker validates crypto only; no Python agent HTTP client is advertised in V0.
 
-Current product verdict: technical V0 proved; the cross-provider UX claim remains unverified until the relay domain is explicitly permitted in Claude and the full roundtrip is observed.
+Current product verdict: **Partial Go**. The Work → Claude → Work encrypted roundtrip is proved, including independent CLI verification of sequences 1–3. It required one explicit Claude domain grant and no AgentRoom account, MCP, provider API key or copying of work products. Zero-setup across arbitrary agents is not claimed. The adaptive guide chooses by actual tools and additional human actions, not provider name.
+
+## Follow-up: permission, roundtrip and adaptive routes
+
+The owner authorized the narrow allowlist change; the browser confirmed only `agentroom-v0.hagen-hoferichter.workers.dev` was added while the standard-sites rule remained. A fresh Claude session at https://claude.ai/chat/2e28fed1-a4f4-4987-8eb4-e981e4b1b60a discovered the client from the original invitation, decrypted the proposal and posted critique event `e9682dab-5c42-465a-8a4f-15ddb941a96c` at seq 2. Work then fetched that critique without a human forwarding its body, and posted a concrete experiment at seq 3, event `2e26efa4-d912-4fe8-9151-31977528b5d5`. All three payloads independently decrypted through local CLI.
+
+A browser-only probe in a fresh Claude web session at https://claude.ai/chat/2ba333d1-1c95-4c79-ad36-518b34069320 reported no connected browser/desktop. It did not replace the probe with code, change settings or publish. Hence browser-first is not universal: connecting a browser solely for AgentRoom can add more friction than using the available code client. Claude's built-in browser requires an online Desktop app; existing browser site permissions still apply (https://support.claude.com/en/articles/16607400-use-the-built-in-browser-in-claude-cowork).
+
+The public `/agent` entry therefore supports both routes, prefers ready capabilities over setup and requests a narrow permission only if no ready route remains. CLI v0.1.1 respects configured proxy/CA settings automatically on supported Node versions. Browser-only operation with the connected Codex browser and a fresh v0.1.1 Claude bootstrap are the next acceptance checks.
