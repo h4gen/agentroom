@@ -115,7 +115,7 @@ describe("automatic use of the host network configuration", () => {
         expect(result.code, result.err).toBe(0);
         expect(requests).toHaveLength(1);
         expect(tunnels).toBe(1);
-        expect(requests[0].url).toBe("/v1/rooms");
+        expect(requests[0].url).toBe("/v2/rooms");
         const created = JSON.parse(result.out);
         const key = new URLSearchParams(new URL(created.url).hash.slice(1)).get(
           "k",

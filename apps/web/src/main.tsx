@@ -18,6 +18,8 @@ import {
   RoomClient,
 } from "../../../packages/protocol/src/client.ts";
 import { parseInvite } from "../../../packages/protocol/src/index.ts";
+import { AgentComposer } from "./agent-composer.tsx";
+import { AttachmentDownload } from "./attachment.tsx";
 import { ConnectDialog } from "./connect-dialog.tsx";
 import { useRoom } from "./use-room.ts";
 
@@ -75,10 +77,10 @@ function App() {
       </main>
       <footer>
         <Text size="1" color="gray">
-          Experimental V0
+          Experimental v0.2
         </Text>
-        <Link size="1" color="gray" href="/protocol/v1">
-          Protocol v1
+        <Link size="1" color="gray" href="/protocol/v2">
+          Protocol v2
         </Link>
         <Link
           size="1"
@@ -173,6 +175,7 @@ function Home({ open }: { open: (opening: Opening) => void }) {
   );
 }
 function Room({ opening }: { opening: Opening }) {
+  const agentView = new URL(opening.url).pathname.endsWith("/agent");
   const parsed = useMemo(() => {
     try {
       return { invite: parseInvite(opening.url) };
@@ -212,7 +215,7 @@ function Room({ opening }: { opening: Opening }) {
       <div className="room-heading">
         <div>
           <Heading as="h1" size="6" weight="medium">
-            Room
+            {agentView ? "Agent room" : "Room"}
           </Heading>
           <Text as="p" size="2" color="gray">
             {expires
@@ -229,7 +232,7 @@ function Room({ opening }: { opening: Opening }) {
           )}
         </div>
         <Badge color="gray" variant="outline">
-          Read-only view
+          {agentView ? "Agent view" : "Read-only view"}
         </Badge>
       </div>
       <div className="toolbar">
@@ -262,6 +265,9 @@ function Room({ opening }: { opening: Opening }) {
           rows={3}
         />
       )}
+      {agentView && client && !error && (
+        <AgentComposer client={client} onPublished={refresh} />
+      )}
       <section className="panel messages-panel" aria-label="Room activity">
         <div className="panel-heading">
           <Heading as="h2" size="3" weight="medium">
@@ -285,24 +291,38 @@ function Room({ opening }: { opening: Opening }) {
               <article className="message" key={event.event_id}>
                 <div className="message-meta">
                   <Text size="2" weight="medium">
-                    {event.payload?.actor || "Unreadable event"}
+                    {event.payload?.actor.name || "Unreadable event"}
                   </Text>
                   <Text size="1" color="gray">
-                    Unverified · #{event.seq}
+                    {event.payload
+                      ? `${event.payload.actor.id.slice(0, 8)} · Signed identity`
+                      : "Unverified"}{" "}
+                    · #{event.seq}
                   </Text>
                 </div>
                 <p className="message-body">
                   {event.error || event.payload?.body}
                 </p>
+                {client &&
+                  event.payload?.attachments.map((attachment) => (
+                    <AttachmentDownload
+                      key={attachment.blob_id}
+                      attachment={attachment}
+                      client={client}
+                    />
+                  ))}
               </article>
             ))
           )}
         </div>
       </section>
       <Text as="p" size="1" color="gray" className="room-note">
-        This view is read-only. Agents publish through the room protocol.
-        Display names and contribution times are unverified. Updates do not
-        start or wake agents.
+        {agentView
+          ? "Agent view: publish only results authorized by your user."
+          : "This view is read-only."}{" "}
+        Signatures identify a participant key, not a real person or AI provider.
+        Contribution times are self-reported. Updates do not start or wake
+        agents.
       </Text>
     </>
   );
@@ -311,7 +331,7 @@ function Security() {
   const [status, setStatus] = useState(""),
     [prompt, setPrompt] = useState("");
   async function audit() {
-    const text = `Critically review ${SOURCE}. Inspect protocol v1, AES-GCM/AAD, key/capability handling, metadata exposure, client delivery and tests. Identify weaknesses and trust assumptions. Open source and release hashes do not prove the deployed website is unchanged. Do not use private invitation links.`;
+    const text = `Critically review ${SOURCE}. Inspect protocol v2, AES-GCM/AAD, key/capability handling, metadata exposure, client delivery and tests. Identify weaknesses and trust assumptions. Open source and release hashes do not prove the deployed website is unchanged. Do not use private invitation links.`;
     try {
       await navigator.clipboard.writeText(text);
       setStatus("Review prompt copied.");
@@ -334,19 +354,20 @@ function Security() {
         Local encryption
       </Heading>
       <p>
-        Your browser or agent generates the encryption key and encrypts messages
-        before sending them. The relay receives ciphertext and technical
-        metadata. The key stays in the invitation’s URL fragment, which normal
-        HTTP requests don’t transmit.
+        Your browser or agent generates the encryption key and signs
+        contributions and encrypts messages and files before sending them. The
+        relay receives ciphertext and technical metadata. The key stays in the
+        invitation’s URL fragment, which normal HTTP requests don’t transmit.
       </p>
       <Separator size="4" />
       <Heading as="h2" size="4" weight="medium">
         Shared access
       </Heading>
       <p>
-        Anyone with the complete link can read and contribute. V0 has no
-        verified identities, individual permissions, key rotation or recovery.
-        Your AI provider sees content its agent decrypts to do your task.
+        Anyone with the complete link can read and contribute. Signatures
+        establish participant-key continuity, not verified personal identities.
+        There are no individual permissions, key rotation or recovery. Your AI
+        provider sees content its agent decrypts to do your task.
       </p>
       <Separator size="4" />
       <Heading as="h2" size="4" weight="medium">

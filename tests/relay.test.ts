@@ -10,19 +10,25 @@ import {
   randomSecret,
   hashAccess,
   base64url,
+  encryptFile,
+  generateIdentity,
+  MAX_FILE_BYTES,
+  MAX_ROOM_BYTES,
 } from "../packages/protocol/src/index.ts";
 let mf: Miniflare,
   dir: string,
   counter = 0;
 const origin = "https://relay.test";
-const options = (persist: string) => ({
+const options = (persist: string, scriptPath = "dist/relay/index.mjs") => ({
   ...convertV4MiniflareOptions({
     name: "relay",
     modules: true,
-    scriptPath: "dist/relay/index.mjs",
+    scriptPath,
     compatibilityDate: "2026-11-17",
     durableObjects: { ROOMS: { className: "Room", useSQLite: true } },
     durableObjectsPersist: persist,
+    r2Buckets: ["FILES"],
+    r2Persist: persist,
     ratelimits: {
       CREATE_LIMIT: {
         namespace_id: "71001",
@@ -105,13 +111,13 @@ describe("real Workers runtime and SQLite relay", () => {
       "Content-Type": "application/json",
       Authorization: `Bearer ${room.invite.access}`,
     };
-    const duplicate = await call(`/v1/rooms/${room.invite.roomId}/events`, {
+    const duplicate = await call(`/v2/rooms/${room.invite.roomId}/events`, {
       method: "POST",
       headers,
       body: JSON.stringify(event),
     });
     expect(duplicate.status).toBe(200);
-    const changed = await call(`/v1/rooms/${room.invite.roomId}/events`, {
+    const changed = await call(`/v2/rooms/${room.invite.roomId}/events`, {
       method: "POST",
       headers,
       body: JSON.stringify(event, null, 2),
@@ -139,7 +145,7 @@ describe("real Workers runtime and SQLite relay", () => {
   });
   it("rejects unauthorized access, invalid envelopes, oversized events and invalid cursors", async () => {
     const room = await create(),
-      path = `/v1/rooms/${room.invite.roomId}`;
+      path = `/v2/rooms/${room.invite.roomId}`;
     expect((await call(path)).status).toBe(401);
     expect(
       (
@@ -201,20 +207,20 @@ describe("real Workers runtime and SQLite relay", () => {
     expect((await call(path + "?k=secret", { headers })).status).toBe(400);
     expect(
       (
-        await call("/v1/rooms", {
+        await call("/v2/rooms", {
           method: "POST",
           headers,
-          body: JSON.stringify({ protocol: 2 }),
+          body: JSON.stringify({ protocol: 1 }),
         })
       ).status,
     ).toBe(409);
     expect(
       (
-        await call("/v1/rooms", {
+        await call("/v2/rooms", {
           method: "POST",
           headers,
           body: JSON.stringify({
-            protocol: 1,
+            protocol: 2,
             access_hash: await hashAccess(randomSecret()),
             ttl_days: 31,
           }),
@@ -238,7 +244,7 @@ describe("real Workers runtime and SQLite relay", () => {
     const name = "BBBBBBBBBBBBBBBBBBBBBB",
       stub = ns.get(ns.idFromName(name)) as any;
     await stub.initialize({
-      protocol: 1,
+      protocol: 2,
       access_hash: await hashAccess(randomSecret()),
       created_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 150).toISOString(),
@@ -284,7 +290,7 @@ describe("real Workers runtime and SQLite relay", () => {
   });
   it("applies creation IP limits and returns Retry-After", async () => {
     const body = JSON.stringify({
-      protocol: 1,
+      protocol: 2,
       access_hash: await hashAccess(randomSecret()),
       ttl_days: 1,
     });
@@ -297,8 +303,8 @@ describe("real Workers runtime and SQLite relay", () => {
       body,
     };
     for (let i = 0; i < 6; i++)
-      expect((await call("/v1/rooms", init)).status).toBe(201);
-    const limited = await call("/v1/rooms", init);
+      expect((await call("/v2/rooms", init)).status).toBe(201);
+    const limited = await call("/v2/rooms", init);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toBe("60");
   });
@@ -306,7 +312,7 @@ describe("real Workers runtime and SQLite relay", () => {
     const name = "CCCCCCCCCCCCCCCCCCCCCC";
     expect(
       (
-        await call(`/v1/rooms/${name}`, {
+        await call(`/v2/rooms/${name}`, {
           headers: { Authorization: `Bearer ${randomSecret()}` },
         })
       ).status,
@@ -316,13 +322,144 @@ describe("real Workers runtime and SQLite relay", () => {
         await storage(name)
       ).exec("SELECT name FROM sqlite_master WHERE name='room_meta'"),
     ).toEqual([]);
-    const response = await call("/v1/missing");
+    const response = await call("/v2/missing");
     expect(response.status).toBe(404);
     expect(response.headers.get("Content-Type")).toContain("application/json");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
-    expect((await call("/protocol/v1")).status).toBe(200);
+    expect((await call("/protocol/v2")).status).toBe(200);
+  });
+  it("stores immutable opaque files, protects access and verifies binary roundtrips", async () => {
+    const room = await create(),
+      a = client(room),
+      bytes = new TextEncoder().encode("id,value\n1,42\n");
+    const file = await encryptFile(
+      room.invite.roomId,
+      room.invite.key,
+      bytes,
+      "SECRET_FILENAME.csv",
+      "text/csv",
+    );
+    const [one, two] = await Promise.all([
+      a.upload(file.attachment.blob_id, file.ciphertext),
+      a.upload(file.attachment.blob_id, file.ciphertext),
+    ]);
+    expect(one).toMatchObject({ blob_id: file.attachment.blob_id });
+    expect(two).toEqual(one);
+    const different = file.ciphertext.slice();
+    different[12] ^= 1;
+    await expect(
+      a.upload(file.attachment.blob_id, different),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await a.download(file.attachment)).toEqual(bytes);
+    const stored = await a.publish(
+      "attached",
+      "Files A",
+      await generateIdentity("Files A"),
+      [file.attachment],
+    );
+    expect((await a.read()).events[0].payload?.attachments[0]).toEqual(
+      file.attachment,
+    );
+    const path = `/v2/rooms/${room.invite.roomId}/blobs/${file.attachment.blob_id}`;
+    expect((await call(path)).status).toBe(401);
+    expect(
+      (
+        await call(path, {
+          headers: { Authorization: `Bearer ${randomSecret()}` },
+        })
+      ).status,
+    ).toBe(403);
+    const sql = await storage(room.invite.roomId);
+    const serialized = JSON.stringify(
+      await sql.exec("SELECT * FROM room_blobs"),
+    );
+    expect(serialized).not.toContain("SECRET_FILENAME");
+    expect(serialized).not.toContain(room.invite.key);
+    const bucket = await mf.getR2Bucket("FILES"),
+      objects = await bucket.list();
+    expect(
+      objects.objects.every((o) => !o.key.includes("SECRET_FILENAME")),
+    ).toBe(true);
+    await sql.exec(
+      "UPDATE room_meta SET expires_at=?",
+      new Date(Date.now() - 1000).toISOString(),
+    );
+    await expect(a.download(file.attachment)).rejects.toMatchObject({
+      status: 410,
+    });
+    await expect(
+      a.upload(crypto.randomUUID(), file.ciphertext),
+    ).rejects.toMatchObject({ status: 410 });
+    expect(stored.seq).toBe(1);
+  });
+  it("roundtrips the full supported 10 MiB file size", async () => {
+    const room = await create(),
+      a = client(room),
+      bytes = new Uint8Array(MAX_FILE_BYTES);
+    bytes[0] = 42;
+    bytes[bytes.length - 1] = 99;
+    const file = await encryptFile(
+      room.invite.roomId,
+      room.invite.key,
+      bytes,
+      "maximum.bin",
+    );
+    await a.upload(file.attachment.blob_id, file.ciphertext);
+    expect(
+      Buffer.from(await a.download(file.attachment)).equals(Buffer.from(bytes)),
+    ).toBe(true);
+  });
+  it("rejects oversized uploads and atomically reserves count and byte quotas", async () => {
+    const room = await create(),
+      a = client(room),
+      sql = await storage(room.invite.roomId);
+    await expect(
+      a.upload(crypto.randomUUID(), new Uint8Array(MAX_FILE_BYTES + 29)),
+    ).rejects.toMatchObject({ status: 413 });
+    const file = await encryptFile(
+      room.invite.roomId,
+      room.invite.key,
+      new Uint8Array(1),
+      "a",
+    );
+    await sql.exec(
+      "INSERT INTO room_blobs VALUES('reservation', ?, 'digest', 0)",
+      MAX_ROOM_BYTES - file.ciphertext.length,
+    );
+    const results = await Promise.allSettled([
+      a.upload(crypto.randomUUID(), file.ciphertext),
+      a.upload(crypto.randomUUID(), file.ciphertext),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(
+      (results.find((r) => r.status === "rejected") as PromiseRejectedResult)
+        .reason,
+    ).toMatchObject({ code: "FILE_QUOTA" });
+    await sql.exec("DELETE FROM room_blobs");
+    await sql.exec(
+      "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<100) INSERT INTO room_blobs SELECT 'seed-'||x,28,'digest',0 FROM n",
+    );
+    await expect(
+      a.upload(crypto.randomUUID(), file.ciphertext),
+    ).rejects.toMatchObject({ code: "FILE_QUOTA" });
+  });
+  it("retires v1 and rejects old rooms without migrating or deleting their data", async () => {
+    expect((await call("/v1/rooms")).status).toBe(410);
+    expect((await call("/protocol/v1")).status).toBe(410);
+    const room = await create(),
+      sql = await storage(room.invite.roomId);
+    await client(room).publish("retained until expiry");
+    await sql.exec("UPDATE room_meta SET protocol=1");
+    await expect(client(room).status()).rejects.toMatchObject({
+      code: "UNSUPPORTED_ROOM_PROTOCOL",
+      status: 409,
+    });
+    expect((await sql.exec("SELECT COUNT(*) AS n FROM room_events"))[0].n).toBe(
+      1,
+    );
   });
   it("retains ciphertext and sequence numbers across a complete runtime restart", async () => {
     const room = await create();
@@ -333,5 +470,120 @@ describe("real Workers runtime and SQLite relay", () => {
     const a = client(room);
     expect((await a.read()).events[0].payload?.body).toBe("before restart");
     expect((await a.publish("after restart")).seq).toBe(2);
+  });
+});
+
+describe("R2 failure recovery at the real Workers boundary", () => {
+  let faultMF: Miniflare, faultDir: string;
+  beforeAll(async () => {
+    const { build } = await import("esbuild");
+    await build({
+      entryPoints: ["tests/fixtures/fault-relay.mjs"],
+      outfile: ".wrangler/fault-relay.mjs",
+      bundle: true,
+      platform: "browser",
+      format: "esm",
+      external: ["cloudflare:workers"],
+      loader: { ".md": "text" },
+    });
+    faultDir = await mkdtemp(join(tmpdir(), "agentroom-fault-"));
+    faultMF = new Miniflare(options(faultDir, ".wrangler/fault-relay.mjs"));
+    await faultMF.ready;
+  });
+  afterAll(async () => {
+    await faultMF?.dispose();
+    if (faultDir) await rm(faultDir, { recursive: true, force: true });
+  });
+  async function fixture(ttl = 60_000) {
+    const name = base64url(crypto.getRandomValues(new Uint8Array(16))),
+      access = randomSecret();
+    const ns = await faultMF.getDurableObjectNamespace("ROOMS"),
+      objectId = ns.idFromName(name),
+      stub = ns.get(objectId) as any;
+    await stub.initialize({
+      protocol: 2,
+      access_hash: await hashAccess(access),
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + ttl).toISOString(),
+    });
+    const fetcher = ((url: any, init?: any) =>
+      faultMF.dispatchFetch(String(url), {
+        ...init,
+        headers: {
+          ...Object.fromEntries(new Headers(init?.headers)),
+          "CF-Connecting-IP": `fault-${++counter}`,
+        },
+      })) as typeof fetch;
+    const invite = { origin, roomId: name, key: randomSecret(), access };
+    const a = new RoomClient(invite, fetcher);
+    const file = await encryptFile(
+      name,
+      invite.key,
+      new Uint8Array([1, 2, 3]),
+      "result.csv",
+    );
+    const bucket = await faultMF.getR2Bucket("FILES"),
+      key = `${objectId.toString()}/${file.attachment.blob_id}`;
+    return {
+      a,
+      file,
+      stub,
+      bucket,
+      key,
+      name,
+      sql: await faultMF.unsafeGetDurableObjectStorage("relay", "Room", {
+        name,
+      }),
+    };
+  }
+  it("retains a failed upload reservation and recovers the same immutable operation", async () => {
+    const { a, file, stub, sql, bucket, key } = await fixture();
+    await stub.setFault("put");
+    await expect(
+      a.upload(file.attachment.blob_id, file.ciphertext),
+    ).rejects.toMatchObject({ status: 500 });
+    expect((await sql.exec("SELECT ready FROM room_blobs"))[0].ready).toBe(0);
+    expect(await bucket.head(key)).toBeNull();
+    await stub.setFault("");
+    await a.upload(file.attachment.blob_id, file.ciphertext);
+    expect(await a.download(file.attachment)).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+    await stub.setFault("get");
+    await expect(a.download(file.attachment)).rejects.toMatchObject({
+      status: 500,
+    });
+    await stub.setFault("");
+    expect(await a.download(file.attachment)).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+  it("keeps cleanup state when R2 deletion fails and removes orphan files on retry", async () => {
+    const { a, file, stub, sql, bucket, key } = await fixture();
+    await a.upload(file.attachment.blob_id, file.ciphertext); // Deliberately no referencing event.
+    await sql.exec(
+      "UPDATE room_meta SET expires_at=?",
+      new Date(Date.now() - 1000).toISOString(),
+    );
+    await stub.setFault("delete");
+    await stub.runCleanup();
+    expect(await sql.exec("SELECT * FROM room_meta")).toHaveLength(1);
+    expect(await bucket.head(key)).not.toBeNull();
+    await expect(a.status()).rejects.toMatchObject({ status: 410 });
+    await stub.setFault("");
+    await stub.runCleanup();
+    expect(await bucket.head(key)).toBeNull();
+    expect(
+      await sql.exec("SELECT name FROM sqlite_master WHERE name='room_meta'"),
+    ).toEqual([]);
+    await stub.runCleanup(); // Idempotent even after metadata is gone.
+  });
+  it("does not leave a file accessible when expiry happens during an upload", async () => {
+    const { a, file, stub, bucket, key } = await fixture(300);
+    await stub.setFault("slow-put");
+    await expect(
+      a.upload(file.attachment.blob_id, file.ciphertext),
+    ).rejects.toMatchObject({ status: 410 });
+    await expect.poll(() => bucket.head(key)).toBeNull();
   });
 });

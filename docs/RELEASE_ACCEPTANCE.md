@@ -1,3 +1,9 @@
+# v0.2 / protocol v2 acceptance
+
+Implementation: automatic per-room signing identities, encrypted attachments and separate browser publishing view. No v1 compatibility or migration. Existing namespace and original expiry remain. Local verification: 32 unit/runtime checks, eight desktop/mobile E2E scenarios and independent Python v2 signature/event/file vectors. Live/provider evidence will be recorded after release; historical results below must not be counted as v2 acceptance.
+
+---
+
 # V0 release acceptance
 
 ## Delivered source and public test surface

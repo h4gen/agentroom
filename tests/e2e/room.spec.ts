@@ -10,10 +10,23 @@ import {
   parseInvite,
   randomSecret,
 } from "../../packages/protocol/src/index.ts";
+// The suite models several independent agents from one IP. Preserve production
+// limits and stagger projects rather than weakening the limiter for acceptance.
+test.beforeAll(async ({}, info) => {
+  if (info.project.name === "mobile")
+    await new Promise((resolve) => setTimeout(resolve, 35_000));
+});
 function cli(args: string[], input?: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const p = spawn(process.execPath, ["dist/agentroom.mjs", ...args], {
       stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        AGENTROOM_PROFILE_DIR: join(
+          tmpdir(),
+          `agentroom-e2e-profiles-${process.pid}`,
+        ),
+      },
     });
     let out = "",
       err = "";
@@ -193,7 +206,7 @@ test("read-only room, both connect modals, ciphertext agent updates, XSS and ret
       timeout: 15000,
     });
     const response = await page.request.get(
-      `/v1/rooms/${invite.roomId}/events`,
+      `/v2/rooms/${invite.roomId}/events`,
       { headers: { Authorization: `Bearer ${invite.access}` } },
     );
     expect(
@@ -221,6 +234,10 @@ test("read-only room, both connect modals, ciphertext agent updates, XSS and ret
     );
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.locator(".message-body").last()).toHaveText(second);
+    const continued = await cli(["read", "--invite-stdin", "--json"], url);
+    expect(continued.events[1].payload.actor.id).toBe(
+      continued.events[0].payload.actor.id,
+    );
     expect(await page.locator("#messages script").count()).toBe(0);
     await page.reload();
     await expect(page.locator(".message-body")).toHaveCount(2);
@@ -233,7 +250,7 @@ test("read-only room, both connect modals, ciphertext agent updates, XSS and ret
       randomSecret(),
       message("unreadable canary"),
     );
-    await page.request.post(`/v1/rooms/${invite.roomId}/events`, {
+    await page.request.post(`/v2/rooms/${invite.roomId}/events`, {
       headers: { Authorization: `Bearer ${invite.access}` },
       data: event,
     });
@@ -242,7 +259,7 @@ test("read-only room, both connect modals, ciphertext agent updates, XSS and ret
       "Some events could not be decrypted",
     );
     await expect(page.locator(".message-body").last()).toContainText(
-      "Cannot decrypt",
+      "Cannot verify",
     );
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.getByRole("status")).toContainText(
@@ -253,7 +270,7 @@ test("read-only room, both connect modals, ciphertext agent updates, XSS and ret
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-  expect(writes).toEqual(["/v1/rooms"]);
+  expect(writes).toEqual(["/v2/rooms"]);
   expect(captured.join("\n")).not.toContain(invite.key);
   expect(captured.join("\n")).not.toContain("#k=");
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
@@ -348,14 +365,234 @@ test("public trust pages, missing fragment, generic preview and strict headers",
   expect(
     await page.locator('meta[property="og:title"]').getAttribute("content"),
   ).toContain("AgentRoom");
-  const protocol = await page.request.get("/protocol/v1");
+  const protocol = await page.request.get("/protocol/v2");
   expect(protocol.status()).toBe(200);
-  expect(await protocol.text()).toContain("agentroom/v1|event|");
+  expect(await protocol.text()).toContain("agentroom/v2|event|");
   const guide = await page.request.get("/agent");
   expect(guide.status()).toBe(200);
   expect(await guide.text()).toContain("fewest");
   expect(await guide.text()).toContain("Interactive browser route");
-  const missing = await page.request.get("/v1/missing");
+  const missing = await page.request.get("/v2/missing");
   expect(missing.status()).toBe(404);
   expect(missing.headers()["content-type"]).toContain("application/json");
+});
+
+test.afterAll(async () => {
+  await rm(join(tmpdir(), `agentroom-e2e-profiles-${process.pid}`), {
+    recursive: true,
+    force: true,
+  });
+});
+
+test("browser-only signed contributions, immutable file exchange, identity continuity and readonly downloads", async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  const room = await cli([
+    "create",
+    "--relay",
+    baseURL!,
+    "--ttl",
+    "1",
+    "--json",
+  ]);
+  const invite = parseInvite(room.url),
+    agentURL = new URL(room.url);
+  agentURL.pathname += "/agent";
+  const requests: string[] = [],
+    postBodies: string[] = [],
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (e) => {
+    if (e.type() === "error") errors.push(e.text());
+  });
+  page.on("request", (r) => {
+    if (r.url().startsWith(baseURL!))
+      requests.push(
+        JSON.stringify({
+          url: r.url(),
+          headers: r.headers(),
+          body: r.postData(),
+        }),
+      );
+  });
+  let dropped = false;
+  await page.route("**/v2/rooms/*/events", async (route) => {
+    if (route.request().method() === "POST") {
+      postBodies.push(route.request().postData()!);
+      if (!dropped) {
+        dropped = true;
+        await route.fetch();
+        await route.abort("failed");
+        return;
+      }
+    }
+    await route.continue();
+  });
+  await page.goto(agentURL.href);
+  await expect(
+    page.getByLabel("Display name", { exact: false }),
+  ).not.toHaveValue("");
+  await page.getByLabel("Display name", { exact: false }).fill("Shared name");
+  await page
+    .getByLabel("Contribution", { exact: true })
+    .fill("BROWSER_BODY_CANARY_42");
+  const csv = Buffer.from("name,value\nGrüße,42\n"),
+    pdf = Buffer.from("%PDF-1.7\nsynthetic acceptance only\n");
+  await page.getByLabel("Attachments", { exact: false }).setInputFiles([
+    { name: "BROWSER_FILE_CANARY.csv", mimeType: "text/csv", buffer: csv },
+    { name: "report<script>.pdf", mimeType: "application/pdf", buffer: pdf },
+  ]);
+  await page
+    .getByRole("button", { name: "Publish contribution", exact: true })
+    .click();
+  await expect(page.getByText("Published and verified · #1")).toBeVisible();
+  expect(postBodies.length).toBe(2);
+  expect(postBodies[0]).toBe(postBodies[1]);
+  const first = await cli(["read", "--invite-stdin", "--json"], room.url);
+  expect(first.events).toHaveLength(1);
+  expect(first.events[0].payload.attachments).toHaveLength(2);
+  const id = first.events[0].payload.actor.id;
+  const dir = await mkdtemp(join(tmpdir(), "agentroom-files-e2e-"));
+  try {
+    const out = join(dir, "result.csv");
+    const download = await cli(
+      [
+        "download",
+        "--invite-stdin",
+        "--blob",
+        first.events[0].payload.attachments[0].blob_id,
+        "--out",
+        out,
+        "--json",
+      ],
+      room.url,
+    );
+    expect(download.saved).toBe(true);
+    const { readFile } = await import("node:fs/promises");
+    expect(await readFile(out)).toEqual(csv);
+    await page.reload();
+    await expect(page.getByLabel("Display name", { exact: false })).toHaveValue(
+      "Shared name",
+    );
+    await page
+      .getByLabel("Contribution", { exact: true })
+      .fill("same identity after reload");
+    await page
+      .getByRole("button", { name: "Publish contribution", exact: true })
+      .click();
+    await expect(page.getByText("Published and verified · #2")).toBeVisible();
+    const again = await cli(["read", "--invite-stdin", "--json"], room.url);
+    expect(again.events[1].payload.actor.id).toBe(id);
+    const secondContext = await browser.newContext();
+    try {
+      const other = await secondContext.newPage();
+      await other.goto(agentURL.href);
+      await expect(
+        other.getByLabel("Display name", { exact: false }),
+      ).not.toHaveValue("");
+      await other
+        .getByLabel("Display name", { exact: false })
+        .fill("Shared name");
+      await other
+        .getByLabel("Contribution", { exact: true })
+        .fill("independent browser participant");
+      await other
+        .getByRole("button", { name: "Publish contribution", exact: true })
+        .click();
+      await expect(
+        other.getByText("Published and verified · #3"),
+      ).toBeVisible();
+    } finally {
+      await secondContext.close();
+    }
+    const third = await cli(["read", "--invite-stdin", "--json"], room.url);
+    expect(third.events[2].payload.actor.id).not.toBe(id);
+    const temporaryContext = await browser.newContext();
+    try {
+      await temporaryContext.addInitScript(() => {
+        Object.defineProperty(window, "indexedDB", {
+          get() {
+            throw new Error("Storage denied");
+          },
+        });
+      });
+      const temporary = await temporaryContext.newPage();
+      await temporary.goto(agentURL.href);
+      await expect(
+        temporary.getByText("temporary in this browser", { exact: false }),
+      ).toBeVisible();
+      await temporary
+        .getByLabel("Contribution", { exact: true })
+        .fill("temporary identity without setup");
+      await temporary
+        .getByRole("button", { name: "Publish contribution", exact: true })
+        .click();
+      await expect(
+        temporary.getByText("Published and verified · #4"),
+      ).toBeVisible();
+    } finally {
+      await temporaryContext.close();
+    }
+    const responseFile = join(dir, "response.md"),
+      pdfFile = join(dir, "review.pdf");
+    await writeFile(responseFile, "CLI reviewed the browser result");
+    await writeFile(pdfFile, pdf);
+    const reply = await cli(
+      [
+        "publish",
+        "--invite-stdin",
+        "--file",
+        responseFile,
+        "--attach",
+        pdfFile,
+        "--actor",
+        "CLI Reviewer",
+        "--json",
+      ],
+      room.url,
+    );
+    expect(reply.seq).toBe(5);
+    expect(reply.actor.id).not.toBe(id);
+    await page.goto(room.url);
+    await expect(page.locator(".message")).toHaveCount(5);
+    await expect(
+      page.locator("textarea:not([readonly]),input:not([readonly])"),
+    ).toHaveCount(0);
+    await expect(
+      page.locator("iframe,object,embed,#messages script"),
+    ).toHaveCount(0);
+    const downloaded = page.waitForEvent("download");
+    await page
+      .getByRole("button", {
+        name: "Download BROWSER_FILE_CANARY.csv",
+        exact: true,
+      })
+      .click();
+    const saved = await downloaded;
+    expect(saved.suggestedFilename()).toBe("BROWSER_FILE_CANARY.csv");
+    expect(await readFile((await saved.path())!)).toEqual(csv);
+    const pdfDownloaded = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Download review.pdf", exact: true })
+      .click();
+    expect(await readFile((await (await pdfDownloaded).path())!)).toEqual(pdf);
+    for (const secret of [
+      invite.key,
+      "BROWSER_BODY_CANARY_42",
+      "BROWSER_FILE_CANARY",
+      "Shared name",
+      "name,value",
+    ])
+      expect(requests.join("\n")).not.toContain(secret);
+    expect(errors.filter((e) => !e.includes("net::ERR_FAILED"))).toEqual([]);
+    if (baseURL?.startsWith("https://"))
+      await page.screenshot({
+        path: `.wrangler/v2-room-${page.viewportSize()!.width < 600 ? "mobile" : "desktop"}.png`,
+        fullPage: true,
+      });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

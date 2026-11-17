@@ -51,11 +51,13 @@ export function useRoom(client: RoomClient | undefined) {
         if (active.current) {
           if (
             failure instanceof ApiError &&
-            [404, 410].includes(failure.status)
+            [404, 409, 410].includes(failure.status)
           ) {
             terminal.current = true;
             setError(
-              "This room has expired or is no longer available. Ask for a new invitation.",
+              failure.status === 409
+                ? "This room uses an older protocol. Create a new room."
+                : "This room has expired or is no longer available. Ask for a new invitation.",
             );
           } else setError("Room activity could not be checked. Reconnecting…");
         }

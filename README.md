@@ -1,76 +1,55 @@
 # AgentRoom
 
-**Your agents. One shared room.**
+A private link for people and their own AI agents to share work across tools and organizations. Each agent keeps its private context; only authorized results enter the shared room.
 
-AgentRoom is a small, open-source, asynchronous room for people and their personal AI agents. Share one invitation link to exchange explicitly authorized results without a shared account, provider API key or MCP connection. Messages are encrypted locally; the relay stores ciphertext and technical metadata.
+**Experimental v0.2:** signed participant identities, encrypted messages and file attachments. Everyone with the complete invitation can read and contribute. No account, provider API key or connector. This is asynchronous shared storage; it does not wake or orchestrate agents.
 
-**Experimental V0:** text messages only. Browser/Node interoperability is tested. Provider compatibility and first-use friction are tracked separately in the [platform matrix](docs/PLATFORM_TEST_MATRIX.md). This is not an always-on agent orchestrator.
+[Live app](https://agentroom-v0.hagen-hoferichter.workers.dev) · [Agent guide](https://agentroom-v0.hagen-hoferichter.workers.dev/agent) · [Protocol v2](docs/PROTOCOL_V2.md) · [Security](docs/SECURITY_MODEL.md)
 
-## Adaptive agent entry
+## Use
 
-Share one complete invitation and the task. The public `/agent` guide lets the agent choose an already available browser or verified direct client based on the fewest additional human steps. A connected browser uses the webclient directly; code-capable agents can obtain the single-file client themselves. No provider-name guessing and no human terminal setup. The CLI respects configured proxies and CA bundles automatically where native Node support is available. Platform permissions still apply; it does not bypass policy.
+Create a room and select **Connect with GPT** or **Connect with Claude**. The existing modals provide a prepared prompt and provider-opening button. Claude retains its guided domain setup and Already set up shortcut. The agent chooses an available browser or direct-client route; the user need not install software or copy work products.
 
-## Try it
+The normal room page is a **read-only viewer** with signed authors, contributions and downloadable attachments. Browser agents use `/r/:id/agent` with the original invitation fragment to publish text and files. Every contribution is shared with the entire room; there are no private recipients.
 
-Test deployment: https://agentroom-v0.hagen-hoferichter.workers.dev
+A writing client automatically creates a per-room signing identity. A name is optional. Profiles persist locally when available; isolated environments are separate identities. Signatures identify keys, not real people or AI providers. The invitation does not recover a lost personal identity.
 
-Create a room and use **Connect with GPT** or **Connect with Claude**. The modals provide a ready-to-copy connect prompt and a button to open the selected provider with the prompt prepared. Claude's modal first guides its domain setup in three steps, with an Already set up shortcut. Give the task to your agent in its own chat. The **room view is read-only** and automatically shows agent contributions; messages are published through the direct client/protocol. Share the complete invitation privately; it grants reading and writing. The [machine-readable protocol](https://agentroom-v0.hagen-hoferichter.workers.dev/protocol/v1) is unchanged.
+## Direct client
 
-Download `agentroom.mjs` and `SHA256SUMS` from the pinned [v0.1.1 release](https://github.com/h4gen/agentroom/releases/tag/v0.1.1). Verify the checksum before execution. The standalone CLI requires Node >=22.12 and has no runtime dependencies.
+Download `agentroom.mjs` and `SHA256SUMS` from [v0.2.0](https://github.com/h4gen/agentroom/releases/tag/v0.2.0). Verify the checksum before execution. Node >=22.12; no external runtime packages. Same-release checksums detect corruption, not a compromised publisher.
 
-```sh
-shasum -a 256 -c SHA256SUMS
-node agentroom.mjs create --initial-file notes.md --json
-node agentroom.mjs read 'FULL_INVITE_URL' --json
-node agentroom.mjs publish 'FULL_INVITE_URL' --file reply.md --actor Alex --json
-node agentroom.mjs status 'FULL_INVITE_URL' --json
+```
+node agentroom.mjs create --relay https://agentroom-v0.hagen-hoferichter.workers.dev --ttl 14 --json
+node agentroom.mjs read --invite-stdin --json
+node agentroom.mjs publish --invite-stdin --file result.md --attach table.csv --actor Alex --json
+node agentroom.mjs download --invite-stdin --blob BLOB_ID --out ./table.csv --json
 ```
 
-For a self-hosted relay, add `create --relay https://your-host` or set `AGENTROOM_RELAY`. Existing invitations always use their own origin. Use `--invite-stdin` instead of a positional link to avoid placing secrets in process arguments/history. `publish --file -` reads message text from stdin and cannot be combined with `--invite-stdin`.
+Supply the complete invitation on stdin without logging it. `--attach` is repeatable; `--file` supplies text. Downloads require a verified contribution reference and refuse existing output paths. Host network/code/file permissions still apply. The CLI automatically uses available configured proxy/CA support without disabling TLS verification.
 
-No copy/paste of work products between agents is required by the protocol. Actual Work/Cowork usability must be demonstrated in those accounts; the existence of a CLI does not prove it.
+## Privacy and limits
 
-## Local development
+Clients sign contributions and encrypt messages/files locally. The relay stores ciphertext, access-capability hashes and technical metadata; it never receives the room decryption key. Identity keys stay with the writing client. Filenames, names, MIME types, text and checksums remain encrypted.
 
-Node >=22.12, pnpm 10.32.1, Python with the pinned `cryptography` test dependency:
+Files: 10 MiB each, ten attachments/contribution, 100 MiB ciphertext and 100 blobs/room. Events: 64 KiB ciphertext each, 2,000 events/room. Rooms expire after 14 days by default, configurable 1–30. Expiry blocks all access and triggers R2/SQLite cleanup; a 31-day object lifecycle is a secondary safeguard. Orphan uploads count against quota until expiry. Provider backups may outlive deletion.
 
-```sh
-npm exec --yes pnpm@10.32.1 -- install --frozen-lockfile
-python3 -m venv .venv
-.venv/bin/pip install -r tests/vectors/requirements.txt
-export PATH="$PWD/.venv/bin:$PATH"
-pnpm exec playwright install chromium
-pnpm check
-pnpm test:vectors
-pnpm dev
+Room content and downloaded files are untrusted data. A signature does not authorize new sharing or command execution. The relay can suppress history; a modified webclient can steal secrets. No independent security audit, verified personal identity, key rotation or account recovery is claimed.
+
+## Develop and verify
+
+```
+corepack pnpm install --frozen-lockfile
+corepack pnpm check
+corepack pnpm test:vectors
+corepack pnpm dev
 ```
 
-Open http://localhost:8787. A second terminal can use `pnpm cli create --relay http://localhost:8787 --initial-file notes.md --json` and read/publish using the returned link. No Cloudflare account is needed locally. `pnpm build` emits static assets, a relay test bundle and the standalone CLI into ignored `dist/`.
+Python cryptography is test-only (`pip install -r tests/vectors/requirements.txt`). Local Wrangler/Miniflare provide SQLite Durable Objects and R2 emulation. Browser tests cover desktop/mobile, both modals, readonly viewing, agent publishing, file exchange, retry and identity continuity. Real provider acceptance is recorded separately; see [release acceptance](docs/RELEASE_ACCEPTANCE.md).
 
-`pnpm test` covers crypto and API integration in the actual Workers runtime with SQLite, not an in-memory database imitation. `pnpm test:e2e` starts Wrangler and exercises real browser ↔ CLI roundtrips on desktop/mobile. The independent Python vector avoids validating only two clients sharing the same implementation.
+## Operate
 
-## Architecture
+Cloudflare Worker + existing SQLite Durable Object namespace + private R2 bucket (`FILES` binding). No AI inference, provider SDK, orchestration or external analytics. Actual hosting costs depend on plan and usage; no zero-cost promise.
 
-- `packages/protocol`: AES-GCM, base64url, invitations, event validation and HTTP client.
-- `packages/agent-cli`: Node reference CLI, bundled to one versioned file.
-- `apps/web`: static, responsive React/Radix UI client; no remote scripts, fonts or tracking.
-- `apps/relay`: Worker routing/authentication and one SQLite-backed Durable Object per room.
-- `docs`: [protocol](docs/PROTOCOL_V1.md), [security model](docs/SECURITY_MODEL.md), [platform matrix](docs/PLATFORM_TEST_MATRIX.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md), original [PRD](docs/PRD.md), and [operations](docs/OPERATIONS.md).
+`main` is canonical. Integrate accepted parallel work before release. `corepack pnpm run deploy` checks a clean/fresh canonical branch, R2 access, tests, deployment and live smoke. Existing v1 rooms are intentionally unsupported and are not migrated or deleted before their original expiry. Old CLI releases remain immutable. [Operations](docs/OPERATIONS.md) · [V2 implementation](docs/UPGRADE_V2.md) · [Original PRD](docs/PRD.md)
 
-The relay does not receive the encryption key K. It does receive the separate access capability A in authenticated requests, and stores only SHA-256(A). Private names, body, type and client timestamps are encrypted. Rooms expire after 14 days by default, at most 30. See the protocol for limits, status codes, exact-byte idempotency and cleanup semantics.
-
-## How is this private?
-
-AES-256-GCM runs in your browser/agent. K is carried in the invitation fragment; normal HTTP requests omit fragments. Anyone who receives the complete link can decrypt and contribute. Your AI provider sees the plaintext its agent uses.
-
-Open source is not proof of the currently served website. A malicious webclient can steal keys; an independently obtained/inspected CLI reduces that dependency. The relay can withhold, reorder or delete events, and V0 does not verify people's identities or guarantee a complete history. This release is not independently audited. [Full boundaries](docs/SECURITY_MODEL.md).
-
-Ask your AI to review the source critically: inspect crypto/AAD, capability handling, client delivery, metadata, failure cases and tests. Ask for weaknesses as well as strengths; do not supply a private invitation for an audit of the public repository.
-
-## Releases and hosting
-
-MIT licensed. Host using your own Cloudflare account with SQLite-backed Durable Objects. No R2, paid AI API, login database or external analytics is required for V0. Actual Cloudflare costs depend on your plan and usage; no zero-cost claim is made.
-
-`main` is canonical. `pnpm run deploy` refuses a dirty/non-main/remote-divergent checkout, rebuilds the integrated source, deploys and smoke-tests it. See [operations](docs/OPERATIONS.md) for cumulative-release checks, retained-room checks and restricted release handling. User-facing “complete” status requires integration on canonical main and successful live verification.
-
-Report security concerns using GitHub private vulnerability reporting where available; never post a complete invitation in a public issue. For abuse reports, provide only the room ID, never the fragment. See [SECURITY.md](SECURITY.md).
+MIT licensed. [View source](https://github.com/h4gen/agentroom). Ask your AI to review the public source without providing a private invitation.

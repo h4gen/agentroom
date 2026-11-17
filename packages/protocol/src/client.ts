@@ -7,6 +7,9 @@ import {
   message,
   randomSecret,
   validOrigin,
+  decryptFile,
+  type Attachment,
+  type Identity,
   type Envelope,
   type Invite,
   type Message,
@@ -38,12 +41,16 @@ export class RoomClient {
     readonly invite: Invite,
     private transport: Fetch = fetch,
   ) {}
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async response(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<Response> {
     // Only the origin, room ID and capability enter HTTP. Never pass the invitation URL to fetch.
-    const url = `${this.invite.origin}/v1/rooms/${this.invite.roomId}${path}`;
+    const url = `${this.invite.origin}/v2/rooms/${this.invite.roomId}${path}`;
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${this.invite.access}`);
-    if (init.body) headers.set("Content-Type", "application/json");
+    if (init.body && !headers.has("Content-Type"))
+      headers.set("Content-Type", "application/json");
     const transport = this.transport;
     for (let attempt = 0; ; attempt++) {
       let response: Response;
@@ -73,24 +80,19 @@ export class RoomClient {
           continue;
         }
       }
-      let data: any;
-      try {
-        data = await response.json();
-      } catch {
-        throw new ApiError(
-          response.status,
-          "BAD_RESPONSE",
-          "Relay returned an invalid response.",
-        );
-      }
-      if (!response.ok)
+      if (!response.ok) {
+        const data = (await response.json()) as any;
         throw new ApiError(
           response.status,
           data.error?.code ?? "HTTP_ERROR",
           data.error?.message ?? "Request failed.",
         );
-      return data as T;
+      }
+      return response;
     }
+  }
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    return (await this.response(path, init)).json();
   }
   status(): Promise<RoomInfo> {
     return this.request("");
@@ -112,14 +114,55 @@ export class RoomClient {
       body: JSON.stringify(event),
     });
   }
-  async publish(body: string, actor?: string) {
+  async publish(
+    body: string,
+    actor?: string,
+    identity?: Identity,
+    attachments: Attachment[] = [],
+  ) {
     return this.post(
-      await encrypt(this.invite.roomId, this.invite.key, message(body, actor)),
+      await encrypt(
+        this.invite.roomId,
+        this.invite.key,
+        message(body, actor, attachments),
+        identity,
+      ),
     );
   }
-  async read(
-    after = 0,
-  ): Promise<{
+  async upload(blobId: string, bytes: Uint8Array<ArrayBuffer>) {
+    return this.request(`/blobs/${blobId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes,
+    });
+  }
+  async download(attachment: Attachment) {
+    const response = await this.response(`/blobs/${attachment.blob_id}`);
+    const length = Number(response.headers.get("Content-Length"));
+    if (length && length !== attachment.size + 28)
+      throw new Error("Attachment size mismatch.");
+    const reader = response.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > attachment.size + 28) {
+        await reader.cancel();
+        throw new Error("Attachment exceeds declared size.");
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return decryptFile(this.invite.roomId, this.invite.key, attachment, bytes);
+  }
+  async read(after = 0): Promise<{
     events: {
       seq: number;
       event_id: string;
@@ -170,7 +213,7 @@ export class RoomClient {
             seq: event.seq,
             event_id: event.event_id,
             error:
-              "Cannot decrypt this event: wrong key, altered data or unsupported payload.",
+              "Cannot verify this event: wrong key, altered data, invalid signature or unsupported payload.",
           });
         }
       }
@@ -194,7 +237,7 @@ export async function createRoom(
   origin = validOrigin(origin);
   const key = randomSecret(),
     access = randomSecret();
-  const response = await transport(`${origin}/v1/rooms`, {
+  const response = await transport(`${origin}/v2/rooms`, {
     method: "POST",
     redirect: "error",
     headers: { "Content-Type": "application/json" },

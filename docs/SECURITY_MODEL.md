@@ -1,51 +1,41 @@
-# Security model — V0
+# Security model — v0.2 / protocol v2
 
-## Assets and trust
+## Shared room
 
-K (32 random bytes) encrypts/decrypts shared results; A (separate 32 random bytes) authorizes relay reads/writes. The full invitation contains both. Participants and their authorized personal AI providers are trusted with the plaintext they process. Neither the relay operator nor Cloudflare storage receives K from conforming clients.
+The complete invitation grants shared read/write access. Everyone can read all contributions and attachments. There are no private messages or participant-specific permissions. Never distribute an invitation publicly or share private sources beyond the user's authorization.
 
-Client source delivery is trusted. An altered browser bundle can exfiltrate keys or plaintext. Public source and hashes hosted alongside a release do not establish independent verification of the deployed website. Independently inspect/download the pinned CLI to reduce dependence on the relay's web delivery. No independent audit has been performed.
+K is a random 256-bit room encryption key; A is an independent random bearer capability. Both are in the URL fragment, which ordinary relay HTTP requests omit. Only SHA-256(A) is stored; A is sent in Authorization headers when needed. K never enters relay paths, queries, headers, logs or databases. Clients refuse credential-forwarding redirects. No analytics, external fonts/scripts, provider SDKs or server-side AI are used.
 
-## Protection and limits
+## Encryption and signatures
 
-- AES-256-GCM authenticates ciphertext plus room/event AAD; 96-bit fresh random nonces and 128-bit tags. CSPRNG secrets, no password-derived keys.
-- Different rooms/events cannot interchange ciphertext without authentication failure.
-- The relay validates envelopes, not plaintext or claimed authorship. It cannot create a valid encrypted message without K, but a link-holder can impersonate any display name.
-- The relay sees IP/network metadata, room IDs, A during access, access hashes, event IDs, nonce/ciphertext size, sequence and server times. It can correlate activity even without reading content.
-- There is no forward secrecy, per-person revocation, verified identity, key rotation, split read/write roles, authenticated global event ordering or log completeness proof.
-- Link loss has no recovery. Link disclosure grants access until expiry. Participants can retain their own copies after expiration.
-- Relay code delivery, local browser extensions, clipboard/history, screenshots and an AI provider receiving the link are outside encryption-at-rest protection.
+AES-256-GCM with fresh random 96-bit nonces, 128-bit tags and separate event/blob v2 AAD bound to room/object IDs. All names, identity public keys, filenames, content types, text and file checksums are inside encrypted contributions. The relay stores opaque ciphertext and necessary technical metadata (IDs, sizes, ciphertext digest, sequences, times, access hash, reservations).
 
-## Implementation controls
+Each writing client generates a per-room Ed25519 identity. Contributions sign the entire JCS-canonical payload, room and event ID before encryption. Fingerprints identify keys, not people or providers. Two identical names with different keys remain different participants. Invalid signatures are errors and expose no trusted content/attachment references. Displayed client times are self-reported.
 
-No third-party scripts, fonts, analytics or telemetry SDKs. Same-origin CSP and API. HTTPS outside localhost. Private responses use no-store; all responses have no-referrer, nosniff, frame restrictions and restrictive permissions policy. Browser cleartext/key state stays in memory and the existing invitation URL; no extra localStorage/IndexedDB copies. Full links remain visible in address/history and copied agent instructions by design.
+A common room key alone cannot recover or impersonate another participant's signing key. Possession of that private key can. CLI private profiles are outside project directories, mode 0600, installed atomically; no K/A or plaintext is cached. Browser private signing keys are non-exportable CryptoKeys in same-origin IndexedDB, selected per room/tab. A new isolated profile creates a new identity. Storage denial permits an explicitly temporary in-page identity. There is no automatic CLI/browser identity linking, personal identity recovery or revocation.
 
-No application request/error logging; Wrangler observability is disabled. Sanitized error codes never reflect body, URL or headers. Provider infrastructure may still retain technical metadata under its policies. CLI diagnostics redact raw exceptions; create intentionally outputs a recoverable secret link. Use stdin for invitations where possible. Do not enable full request tracing or publish test traces containing live links. Browser test traces are local/ignored, not uploaded by CI.
+## Files and browser safety
 
-Input bodies are streamed with a hard bound. Envelope schema is strict, canonical base64url required, nonce exactly 12 bytes, GCM tag at least 16 bytes. Parameterized SQL stores encrypted envelopes only. Atomic per-room insertion/quota/idempotency, rechecking expiry after async work. Unknown-room reads never initialize schema. Constant-work comparison of fixed-size capability hashes avoids obvious early exits.
+Files are encrypted locally before uploading to a private R2 bucket. Only authenticated Worker routes expose ciphertext, and every request checks expiry. Blob IDs are opaque, immutable and scoped to the room. Reservations enforce byte/count limits under concurrency before an R2 write. Exact retries reuse ciphertext; a changed body under the same ID fails. Incomplete/orphan uploads remain bounded by quota and room TTL.
 
-Room data is rendered using textContent, never HTML. Scripts, external image URLs and commands inside messages are inert text. This protects the web viewer; it does not guarantee a separate AI agent resists prompt injection. Agent templates explicitly subordinate room messages to the user's authorized task. An actual provider test is required before claiming provider-level prompt-injection resistance.
+Downloads verify signed metadata, AEAD, size and plaintext SHA-256 before output. Filenames are never server HTTP headers or CLI output paths. Browser downloads use octet-stream with a sanitized suggested basename. No inline preview, extraction, executable rendering or automatic file execution. Agent environments must separately have access to their intended local files.
 
-## Lifecycle and abuse
+The normal human viewer is read-only. A separate agent view has explicit text/file controls. Both have identical room privileges; this is not an agent authentication boundary. Room content is React text, never HTML; signatures do not make external instructions trusted. Restrictive self-only CSP, per-response style nonces for Radix, no unsafe-inline scripts, no-referrer and no-store private responses remain enabled.
 
-Default retention 14 days, hard maximum 30. Expired requests fail immediately even if alarm delivery is delayed. Alarm cleanup deletes the live SQL/KV storage and is idempotent. No guarantee of immediate removal from provider backups or independently saved participant copies.
+## Trust limitations
 
-Limits: 64 KiB decoded ciphertext/event, 90 KB request, 2,000 events/room, 30 writes/minute/room. Cloudflare IP rate limits are approximate and local to an edge location. They are not a strict global spending limit or proof against distributed abuse. Hosting owners must review the account's plan and usage controls before a broad launch.
+The relay can suppress/delete events or show incomplete/different histories. AEAD/signatures do not prove global completeness or availability. The delivered webclient has access to K/plaintext and is trusted: malicious served JavaScript could exfiltrate them. An independently obtained/inspected CLI reduces this dependency. Open source/checksums do not prove an unmodified deployment or replace an independent audit.
 
-V0 is a test deployment. Abuse reports must use only room ID. An operator can delete a room's ciphertext using the authenticated Cloudflare Durable Object administration tools; no public deletion/admin API or content moderation backend is exposed. Operator deletion procedures must be validated in that account before a broader public pilot. No server-side plaintext scanning is possible under this architecture.
+Authorized AI providers see the plaintext their agents process. A model can mishandle third-party instructions; browser rendering safety does not prove provider prompt-injection resistance. Existing provider tests are historical evidence only for their tested version/path.
 
-## Evidence
+## Provider handoff
 
-Automated tests inspect actual SQLite rows for canary body/author/K/A leakage, inspect client requests for K, exercise wrong key/AAD/ciphertext, replay and concurrency, run actual expiry alarms and restart the Workers runtime. Browser tests cover HTML injection and missing fragments. Tests establish behavior of this source/release; they do not prove that any arbitrary deployed origin serves unchanged code.
+GPT/Claude copy/open modals construct the private connect prompt locally. Opening a provider deliberately shares the complete invitation with that provider. Its query/history may retain it before submission. The relay never constructs/logs redirects. The user reviews/sends the prepared prompt; no automatic send, platform permission grant or connection claim. Claude's settings shortcut carries only the public relay hostname, never room secrets.
 
-## Adaptive access
+## Lifecycle, abuse and versions
 
-The public `/agent` guide lets an agent select an already connected browser or direct client by actual capability and additional human steps. It cannot authorize account/network/browser permissions. The Node CLI can relaunch itself once to enable native proxy handling for a proxy already configured in the environment, carrying an existing CA bundle into Node trust if not explicitly configured. Explicit proxy choices and TLS verification remain intact. It does not add domains, disable verification or invent a tunnel around a denied policy.
+Rooms default to 14 days, maximum 30. Expired requests fail immediately, including file operations. The alarm deletes the room's R2 prefix, including orphans, before deleting SQLite storage. Failed cleanup retains state and retries after 60 seconds. A 31-day R2 lifecycle provides a secondary bound; no immediate physical erasure from provider backups is claimed.
 
-## Explicit AI-provider handoff
+Limits: 10 MiB/file, ten attachments/contribution, 100 MiB encrypted files and 100 blobs/room, 64 KiB encrypted event, 2,000 events and 30 new events/minute/room. IP rate limits are approximate per-location, not global billing caps. No public admin/deletion endpoint or plaintext moderation backend. Collect only room IDs for incident reports.
 
-The room is a read-only state viewer. The GPT and Claude connection modals expose selectable private connect prompts, copy controls and explicit provider-opening links. These fields are never submitted to AgentRoom. ChatGPT's prompt URL is generated locally in the same way as Claude's and shares the complete invitation with the named provider only on the opening action. Copying/opening never establishes or claims an authenticated agent connection. Agent contributions still use the existing authenticated ciphertext protocol.
-
-Radix modal scroll locking requires an injected stylesheet. HTML responses receive a fresh random 128-bit style nonce, included in a local meta element and that response's style CSP. The client supplies it through the library's nonce API. Script policy remains self-only; unsafe-inline styles/scripts and third-party scripts remain disallowed. Private HTML responses are no-store. This nonce is independent of room keys/capabilities.
-
-“Open in Claude” constructs a claude.ai/new prompt-prefill URL entirely in the browser, containing the complete invitation. This is a deliberate sharing action with the named AI provider, which receives the key/capability as it would when the user gives its agent the link. Unlike the AgentRoom invitation's fragment, the provider's encoded q parameter is an HTTP query: the destination provider and browser history can receive/retain it before the message is sent. The relay never constructs, redirects, logs or tracks this URL. The UI identifies the destination and says the private link will be shared. Users review/send the prepared prompt in Claude. No automatic send, network permission grant or allowlist modification is claimed.
+v1 routes are retired with 410. Old rooms return an explicit unsupported-protocol response via v2, are not migrated and retain their original expiry cleanup. Existing namespace and stored data are not reset. No downgraded/unsigned fallback exists.

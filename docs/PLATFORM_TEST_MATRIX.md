@@ -1,3 +1,7 @@
+# Protocol v2 status
+
+The entries below are historical V0/v1 provider evidence, not proof for the incompatible v2 release. See RELEASE_ACCEPTANCE.md for current v2 checks. The old protocol is retired; create fresh rooms for new acceptance.
+
 # Platform acceptance matrix
 
 Do not infer provider compatibility from protocol/client tests. Status starts unverified until an actual account run is observed. Test only synthetic data; never use private account sources or existing user conversations as fixtures.

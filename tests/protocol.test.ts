@@ -27,8 +27,9 @@ describe("protocol and independent crypto", () => {
   });
   it("Python independently decrypts a fresh reference-client ciphertext", async () => {
     const key = randomSecret(),
-      payload = message("Unicode: Grüße 🌱 <script>not code</script>", "Alex");
-    const envelope = await encrypt(room, key, payload);
+      input = message("Unicode: Grüße 🌱 <script>not code</script>", "Alex");
+    const envelope = await encrypt(room, key, input);
+    const payload = await decrypt(room, key, envelope);
     const result = execFileSync(
       "python3",
       ["tests/vectors/check.py", "--event"],

@@ -18,7 +18,16 @@ try {
     );
   console.log("Canonical commit: " + read("rev-parse", "HEAD"));
   console.log(read("worktree", "list"));
+  run("pnpm", [
+    "exec",
+    "wrangler",
+    "r2",
+    "bucket",
+    "info",
+    "agentroom-v2-files",
+  ]);
   run("pnpm", ["check"]);
+  run("pnpm", ["test:vectors"]);
   // Recheck after tests in case another task advanced main while they ran.
   run("git", ["fetch", "origin"]);
   if (

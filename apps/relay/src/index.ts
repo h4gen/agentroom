@@ -1,17 +1,24 @@
+import { HttpError, fail } from "./http.ts";
+import { BlobStore } from "./blobs.ts";
 import { DurableObject } from "cloudflare:workers";
 import {
   base64url,
   hashAccess,
   MAX_EVENT_BYTES,
+  MAX_FILE_BYTES,
+  MAX_ROOM_BYTES,
+  MAX_BLOBS,
   ProtocolError,
   ROOM_ID,
   unbase64url,
+  EVENT_ID,
   validateEnvelope,
 } from "../../../packages/protocol/src/index.ts";
-import protocolDoc from "../../../docs/PROTOCOL_V1.md";
+import protocolDoc from "../../../docs/PROTOCOL_V2.md";
 import agentGuide from "../../../docs/AGENT_GUIDE.md";
 
 export interface Env {
+  FILES: R2Bucket;
   ROOMS: DurableObjectNamespace<Room>;
   ASSETS: Fetcher;
   CREATE_LIMIT: RateLimit;
@@ -29,24 +36,6 @@ type EventRow = {
   nonce: string;
   ciphertext: string;
   payload_digest: string;
-};
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly retry?: number,
-  ) {
-    super(message);
-  }
-}
-const fail = (
-  status: number,
-  code: string,
-  text: string,
-  retry?: number,
-): never => {
-  throw new HttpError(status, code, text, retry);
 };
 function json(
   data: unknown,
@@ -145,8 +134,22 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname.startsWith("/v1/") || url.pathname === "/protocol/v1")
+        return secure(
+          json(
+            {
+              error: {
+                code: "PROTOCOL_RETIRED",
+                message:
+                  "Protocol v1 is retired. Create a new v2 room with the current client.",
+              },
+            },
+            410,
+          ),
+          true,
+        );
       if (
-        ["/protocol/v1", "/agent"].includes(url.pathname) &&
+        ["/protocol/v2", "/agent"].includes(url.pathname) &&
         request.method === "GET"
       )
         return secure(
@@ -157,7 +160,7 @@ export default {
             },
           }),
         );
-      if (!url.pathname.startsWith("/v1/")) {
+      if (!url.pathname.startsWith("/v2/")) {
         if (!["GET", "HEAD"].includes(request.method))
           return secure(
             json(
@@ -175,7 +178,7 @@ export default {
           url.pathname === "/" ||
           url.pathname === "/index.html" ||
           url.pathname === "/security" ||
-          /^\/r\/[A-Za-z0-9_-]{22}$/.test(url.pathname)
+          /^\/r\/[A-Za-z0-9_-]{22}(?:\/agent)?$/.test(url.pathname)
         ) {
           const assetUrl = new URL("/index.html", url.origin);
           const styleNonce = base64url(
@@ -219,7 +222,7 @@ export default {
           "Too many requests. Try again in a minute.",
           60,
         );
-      if (url.pathname === "/v1/rooms" && request.method === "POST") {
+      if (url.pathname === "/v2/rooms" && request.method === "POST") {
         if (!(await allowed(env.CREATE_LIMIT, ip)))
           fail(
             429,
@@ -228,8 +231,8 @@ export default {
             60,
           );
         const { value } = await body(request, 1024);
-        if (!value || value.protocol !== 1)
-          fail(409, "UNSUPPORTED_PROTOCOL", "Only protocol 1 is supported.");
+        if (!value || value.protocol !== 2)
+          fail(409, "UNSUPPORTED_PROTOCOL", "Only protocol 2 is supported.");
         if (
           Object.keys(value).some(
             (k) => !["protocol", "access_hash", "ttl_days"].includes(k),
@@ -249,19 +252,20 @@ export default {
           expires_at = new Date(Date.now() + ttl * 86_400_000).toISOString();
         const room = env.ROOMS.get(env.ROOMS.idFromName(room_id));
         await room.initialize({
-          protocol: 1,
+          protocol: 2,
           access_hash: value.access_hash,
           created_at,
           expires_at,
         });
         return secure(
-          json({ room_id, protocol: 1, created_at, expires_at }, 201),
+          json({ room_id, protocol: 2, created_at, expires_at }, 201),
           true,
         );
       }
-      const match = /^\/v1\/rooms\/([A-Za-z0-9_-]{22})(\/events)?$/.exec(
-        url.pathname,
-      );
+      const match =
+        /^\/v2\/rooms\/([A-Za-z0-9_-]{22})(\/events|\/blobs\/[0-9a-f-]{36})?$/.exec(
+          url.pathname,
+        );
       if (!match || !ROOM_ID.test(match[1]))
         fail(404, "NOT_FOUND", "Room or route not found.");
       const auth = request.headers.get("Authorization");
@@ -282,6 +286,7 @@ async function allowed(limiter: RateLimit, key: string) {
 }
 
 export class Room extends DurableObject<Env> {
+  private uploads = 0;
   async initialize(meta: Meta) {
     // Only room creation creates tables: GETs for random room IDs do not allocate persistent data.
     this.ctx.storage.transactionSync(() => {
@@ -302,7 +307,16 @@ export class Room extends DurableObject<Env> {
         meta.expires_at,
       );
     });
+    this.blobs(meta).initialize();
     await this.ctx.storage.setAlarm(Date.parse(meta.expires_at));
+  }
+  private blobs(meta: Meta) {
+    return new BlobStore(
+      this.ctx.storage,
+      this.env.FILES,
+      `${this.ctx.id.toString()}/`,
+      meta.expires_at,
+    );
   }
   private meta(): Meta | undefined {
     const tables = this.ctx.storage.sql
@@ -336,8 +350,37 @@ export class Room extends DurableObject<Env> {
       if (difference) fail(403, "FORBIDDEN", "Invalid capability.");
       if (Date.now() >= Date.parse(meta!.expires_at))
         fail(410, "ROOM_EXPIRED", "This room has expired.");
-      const url = new URL(request.url),
-        eventsRoute = url.pathname.endsWith("/events");
+      if (meta.protocol !== 2)
+        fail(
+          409,
+          "UNSUPPORTED_ROOM_PROTOCOL",
+          "This room uses an older protocol. Create a new room.",
+        );
+      const url = new URL(request.url);
+      const blobMatch = /\/blobs\/([^/]+)$/.exec(url.pathname);
+      if (blobMatch) {
+        if (!EVENT_ID.test(blobMatch[1]))
+          fail(400, "INVALID_INPUT", "Invalid blob ID.");
+        const store = this.blobs(meta);
+        if (request.method === "PUT") {
+          if (this.uploads >= 2)
+            fail(
+              429,
+              "UPLOAD_BUSY",
+              "Two file uploads are already in progress. Retry shortly.",
+              1,
+            );
+          this.uploads++;
+          try {
+            return await store.put(blobMatch[1], request);
+          } finally {
+            this.uploads--;
+          }
+        }
+        if (request.method === "GET") return await store.get(blobMatch[1]);
+        fail(405, "METHOD_NOT_ALLOWED", "Use GET or PUT.");
+      }
+      const eventsRoute = url.pathname.endsWith("/events");
       if (request.method === "GET" && !eventsRoute) {
         const last_seq = this.ctx.storage.sql
           .exec<{
@@ -345,10 +388,13 @@ export class Room extends DurableObject<Env> {
           }>("SELECT COALESCE(MAX(seq),0) AS n FROM room_events")
           .one().n;
         return json({
-          protocol: 1,
+          protocol: 2,
           last_seq,
           expires_at: meta!.expires_at,
           max_event_bytes: MAX_EVENT_BYTES,
+          max_file_bytes: MAX_FILE_BYTES,
+          max_room_file_bytes: MAX_ROOM_BYTES,
+          max_blobs: MAX_BLOBS,
         });
       }
       if (request.method === "GET" && eventsRoute) {
@@ -479,9 +525,19 @@ export class Room extends DurableObject<Env> {
   }
   async alarm() {
     const meta = this.meta();
-    if (!meta || Date.now() >= Date.parse(meta.expires_at))
+    if (meta && Date.now() < Date.parse(meta.expires_at)) {
+      await this.ctx.storage.setAlarm(Date.parse(meta.expires_at));
+      return;
+    }
+    try {
+      // Old rooms have no blobs; keeping the namespace lets their expiry still run.
+      await this.blobs(
+        meta || ({ expires_at: new Date(0).toISOString() } as Meta),
+      ).cleanup();
       await this.ctx.storage.deleteAll();
-    else await this.ctx.storage.setAlarm(Date.parse(meta.expires_at));
+    } catch {
+      await this.ctx.storage.setAlarm(Date.now() + 60_000);
+    }
   }
 }
 function integer(value: string, min: number, max: number): number {
