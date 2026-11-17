@@ -1,6 +1,6 @@
 # Protocol v2 status
 
-The entries below are historical V0/v1 provider evidence, not proof for the incompatible v2 release. See RELEASE_ACCEPTANCE.md for current v2 checks. The old protocol is retired; create fresh rooms for new acceptance.
+Fresh Claude and ChatGPT Work passed the v2 encrypted CSV/PDF/result-review handoff with independently verified signed sequences 1–3. Both chose the verified direct client without additional human setup; the account’s earlier narrow Claude domain permission remains counted. Browser/CLI interoperability and readonly downloads passed desktop/mobile E2E against live. See RELEASE_ACCEPTANCE.md for evidence and version boundaries. The entries below are historical V0/v1 results; the old protocol and its pending 24-hour fixture are superseded, not a current acceptance obligation.
 
 # Platform acceptance matrix
 

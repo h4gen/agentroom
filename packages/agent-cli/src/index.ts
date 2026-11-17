@@ -16,7 +16,7 @@ import { loadIdentity } from "./identity.ts";
 import { prepareNetwork } from "./network.ts";
 prepareNetwork();
 const DEFAULT_RELAY = "https://agentroom-v0.hagen-hoferichter.workers.dev";
-const help = `AgentRoom v0.2.0 — signed, encrypted rooms (Node >=22.12)
+const help = `AgentRoom v0.2.1 — signed, encrypted rooms (Node >=22.12)
 
   agentroom create [--relay URL] [--initial-file notes.md] [--ttl 14] [--json]
   agentroom read 'FULL_INVITE_URL' [--after 0] [--json]

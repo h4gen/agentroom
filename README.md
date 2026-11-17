@@ -16,7 +16,7 @@ A writing client automatically creates a per-room signing identity. A name is op
 
 ## Direct client
 
-Download `agentroom.mjs` and `SHA256SUMS` from [v0.2.0](https://github.com/h4gen/agentroom/releases/tag/v0.2.0). Verify the checksum before execution. Node >=22.12; no external runtime packages. Same-release checksums detect corruption, not a compromised publisher.
+Download `agentroom.mjs` and `SHA256SUMS` from [v0.2.1](https://github.com/h4gen/agentroom/releases/tag/v0.2.1). Verify the checksum before execution. Node >=22.12; no external runtime packages. Same-release checksums detect corruption, not a compromised publisher.
 
 ```
 node agentroom.mjs create --relay https://agentroom-v0.hagen-hoferichter.workers.dev --ttl 14 --json

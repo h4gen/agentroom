@@ -60,7 +60,9 @@ export class RoomClient {
           headers,
           redirect: "error",
           cache: "no-store",
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(
+            path.includes("/blobs/") ? 120_000 : 20_000,
+          ),
         });
       } catch {
         if (attempt < 2) {

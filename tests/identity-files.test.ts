@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtemp, rm, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,6 +16,7 @@ import {
   safeFilename,
 } from "../packages/protocol/src/index.ts";
 import { loadIdentity } from "../packages/agent-cli/src/identity.ts";
+import { RoomClient } from "../packages/protocol/src/client.ts";
 import vector from "./vectors/aes-gcm.json";
 const room = "AAAAAAAAAAAAAAAAAAAAAA";
 describe("v2 signed participants and encrypted attachments", () => {
@@ -101,6 +102,43 @@ describe("v2 signed participants and encrypted attachments", () => {
       encryptFile(room, key, new Uint8Array(MAX_FILE_BYTES + 1), "too-big"),
     ).rejects.toThrow();
     expect(safeFilename("../../unsafe\u0000.html")).toBe("unsafe.html");
+  });
+  it("gives binary file transfers enough time while keeping ordinary API deadlines short", async () => {
+    const timeouts: number[] = [];
+    const clock = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      timeouts.push(ms);
+      return new AbortController().signal;
+    });
+    try {
+      const invite = {
+        origin: "https://example.test",
+        roomId: room,
+        key: randomSecret(),
+        access: randomSecret(),
+      };
+      const file = await encryptFile(
+        room,
+        invite.key,
+        new Uint8Array([1, 2, 3]),
+        "test.bin",
+      );
+      const transport = vi.fn(async (_url: any, init: any) =>
+        init?.method === "PUT"
+          ? Response.json({ blob_id: file.attachment.blob_id })
+          : String(_url).includes("/blobs/")
+            ? new Response(file.ciphertext)
+            : Response.json({ protocol: 2 }),
+      ) as typeof fetch;
+      const client = new RoomClient(invite, transport);
+      await client.status();
+      await client.upload(file.attachment.blob_id, file.ciphertext);
+      expect(await client.download(file.attachment)).toEqual(
+        new Uint8Array([1, 2, 3]),
+      );
+      expect(timeouts).toEqual([20_000, 120_000, 120_000]);
+    } finally {
+      clock.mockRestore();
+    }
   });
   it("atomically reuses a private local profile, even under concurrent first use", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentroom-identity-")),

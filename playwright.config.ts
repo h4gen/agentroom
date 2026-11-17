@@ -3,7 +3,8 @@ export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: false,
   workers: 1,
-  timeout: 45_000,
+  timeout: process.env.AGENTROOM_TEST_URL ? 90_000 : 45_000,
+  expect: { timeout: process.env.AGENTROOM_TEST_URL ? 15_000 : 5_000 },
   use: {
     baseURL: process.env.AGENTROOM_TEST_URL || "http://127.0.0.1:8787",
     trace: "retain-on-failure",

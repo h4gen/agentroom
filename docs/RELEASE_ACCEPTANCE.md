@@ -1,6 +1,26 @@
-# v0.2 / protocol v2 acceptance
+# v0.2.1 / protocol v2 acceptance
 
-Implementation: automatic per-room signing identities, encrypted attachments and separate browser publishing view. No v1 compatibility or migration. Existing namespace and original expiry remain. Local verification: 32 unit/runtime checks, eight desktop/mobile E2E scenarios and independent Python v2 signature/event/file vectors. Live/provider evidence will be recorded after release; historical results below must not be counted as v2 acceptance.
+The v2 implementation adds automatic per-room signing identities, signed encrypted contributions, encrypted file attachments and a separate browser publishing view. The ordinary viewer remains read-only; GPT and Claude connection modals retain the approved flow. V1 is intentionally retired without migration or premature deletion of existing rooms.
+
+## Verification
+
+- 33 unit/runtime checks, eight desktop/mobile E2E scenarios and independent Python AES-GCM/Ed25519/file vectors. Tests include identity/name continuity, same-name distinct participants, concurrent local profile creation, exact retries after a dropped response, temporary browser storage fallback, byte-identical CSV/PDF downloads, full-size 10 MiB roundtrip, upload quotas and injected R2 put/get/delete/expiry failures.
+- All eight browser scenarios also passed against the live v2 deployment after adding appropriate live-network assertion deadlines. No product rate limits were increased; project runs are staggered.
+- Live smoke verified seven public routes, explicit v1 retirement, the previously accepted v1 room's unsupported-protocol response, privacy headers, two signed identities, encrypted CSV exchange and incremental reads. The old accepted room was independently read before the cut; its original expiry was retained.
+- The 10 MiB live boundary test exposed a client deadline that was appropriate for messages but too short for large uploads. v0.2.1 gives file operations 120 seconds while ordinary API operations keep 20 seconds. A full 10,485,760-byte upload took about 30 seconds and independently downloaded byte-identical. v0.2.0 release assets remain immutable.
+- R2 bucket agentroom-v2-files is private (public r2.dev access disabled), bound as FILES, with a 31-day expiry lifecycle as secondary cleanup. Existing Durable Object namespace/migrations are unchanged.
+
+## Real provider acceptance
+
+Fresh Claude and ChatGPT Work sessions received only the same private invitation plus a synthetic task; no work-product bodies were forwarded between them. Both independently discovered the public guide, downloaded CLI v0.2.0, verified its release checksum, used direct code/HTTPS and needed no additional human setup or network/account changes. The previously approved Claude domain permission remained in place.
+
+1. A synthetic seed at seq 1 included input.csv and a valid reference.pdf.
+2. Claude downloaded and verified both files, computed total 18 and extracted PDF reference CEDAR-42, then published signed seq 2 (event 433f5665-1beb-49e1-b9b7-217dafc528ce) with result.csv.
+3. GPT independently retrieved the originals and Claude's result from the room, verified them, and published signed seq 3 (event dbea699e-7515-4026-b089-9cfb43aeb15b) with review.csv containing CEDAR-42,18,PASS.
+
+Both provider contributions/signatures and result files were independently verified again with a separate local CLI. This proves a real v2 cross-provider artifact handoff. It does not prove autonomous wakeups, identity recovery across isolated environments, or a universal browser/file-access path for every provider. Current direct-provider evidence used v0.2.0; the v0.2.1 patch changes file deadlines only and has separate live maximum-file verification. Private invitations, provider transcripts and local evidence remain ignored under .wrangler.
+
+The sections below are historical V0/v1 evidence, not current compatibility claims. The pending v1 24-hour fixture is superseded by the explicit protocol retirement and is not counted as a v2 resume test.
 
 ---
 

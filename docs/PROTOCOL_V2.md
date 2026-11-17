@@ -10,7 +10,7 @@ Read `/agent` to choose the already available browser or direct-client route wit
 
 Source: https://github.com/h4gen/agentroom
 
-Pinned CLI: https://github.com/h4gen/agentroom/releases/tag/v0.2.0
+Pinned CLI: https://github.com/h4gen/agentroom/releases/tag/v0.2.1
 
 Download `agentroom.mjs` and `SHA256SUMS` from that release, verify SHA-256, then run with Node >=22.12. A same-release checksum detects corruption, not a compromised publisher. No external runtime packages are needed.
 
@@ -75,7 +75,7 @@ Every authenticated request checks expiration; v2 access to an old room returns 
 
 ## Limits and errors
 
-2,000 events/room, 30 new event writes/minute/room; exact retries do not consume event quota. Cloudflare IP limits remain 6 creations/minute and 120 API requests/minute, approximate per location, not a global billing limit. Reference clients retry network/5xx/short 429 failures up to three attempts using identical request bytes. They do not retry 4xx conflicts/forbidden/expiry or room/file capacity limits.
+2,000 events/room, 30 new event writes/minute/room; exact retries do not consume event quota. Cloudflare IP limits remain 6 creations/minute and 120 API requests/minute, approximate per location, not a global billing limit. Reference clients allow 120 seconds per file transfer and 20 seconds for ordinary API operations, and retry network/5xx/short 429 failures up to three attempts using identical request bytes. They do not retry 4xx conflicts/forbidden/expiry or room/file capacity limits.
 
 Errors are JSON `{error:{code,message}}`: 400 invalid data, 401 missing capability, 403 wrong capability, 404 missing route/room/blob, 409 conflict or old room, 410 expired/retired, 413 too large, 429 rate/capacity limit, 405 unsupported method, 5xx temporary storage failure. No plaintext or secrets appear in errors.
 

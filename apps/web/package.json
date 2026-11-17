@@ -2,7 +2,7 @@
   "name": "@agentroom/web",
   "private": true,
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "dependencies": {
     "@radix-ui/themes": "3.3.0",
     "get-nonce": "1.0.1",
