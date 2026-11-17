@@ -215,6 +215,65 @@ function Home({ open }: { open: (opening: Opening) => void }) {
     </>
   );
 }
+function ClaudeSetup() {
+  const domain = location.hostname;
+  const input = useRef<HTMLInputElement>(null);
+  const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  async function copyDomain() {
+    try {
+      await navigator.clipboard.writeText(domain);
+      setCopied(true);
+      setCopyFailed(false);
+    } catch {
+      setCopied(false);
+      setCopyFailed(true);
+      input.current?.focus();
+      input.current?.select();
+    }
+  }
+  return (
+    <section className="claude-setup" aria-labelledby="claude-setup-title">
+      <Text as="p" size="2" weight="medium" id="claude-setup-title">
+        Claude network access
+      </Text>
+      <Text as="p" size="1" color="gray">
+        Set up once, only if Claude cannot access this room.
+      </Text>
+      <div className="setup-actions">
+        <TextField.Root
+          ref={input}
+          aria-label="Website to allow"
+          value={domain}
+          readOnly
+          onFocus={(event) => event.currentTarget.select()}
+        />
+        <Button
+          color="gray"
+          variant="surface"
+          onClick={() => void copyDomain()}
+        >
+          <span aria-live="polite">{copied ? "Copied" : "1. Copy domain"}</span>
+        </Button>
+        <Button asChild color="gray" variant="surface">
+          <a
+            href={CLAUDE_NETWORK_SETTINGS}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            2. Open Claude settings
+          </a>
+        </Button>
+      </div>
+      <Text as="p" size="1" color="gray" aria-live="polite">
+        {copyFailed
+          ? "Copy the selected domain, then open Claude settings. "
+          : ""}
+        Paste into “Add a website” and click “Add”.
+      </Text>
+    </section>
+  );
+}
 function Room({ opening }: { opening: Opening }) {
   const initialWarning = useRef(opening.warning || "");
   const parsed = useMemo(() => {
@@ -289,19 +348,6 @@ function Room({ opening }: { opening: Opening }) {
       setStatus("Copy the selected text below.");
     }
   }
-  async function copySetupDomain() {
-    try {
-      await navigator.clipboard.writeText(location.hostname);
-      setStatus(
-        "Server domain copied. In Claude, paste it into Add a website and click Add.",
-      );
-    } catch {
-      setCopyText(location.hostname);
-      setStatus(
-        "Copy the server domain below. In Claude, paste it into Add a website and click Add.",
-      );
-    }
-  }
   const instructions = parsed.invite ? agentPrompt(opening.url) : "";
   return (
     <>
@@ -345,18 +391,6 @@ function Room({ opening }: { opening: Opening }) {
             </a>
           </Button>
         )}
-        {client && (
-          <Button asChild color="gray" variant="surface">
-            <a
-              href={CLAUDE_NETWORK_SETTINGS}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => void copySetupDomain()}
-            >
-              Configure Claude
-            </a>
-          </Button>
-        )}
         <Button
           color="gray"
           variant="surface"
@@ -370,11 +404,10 @@ function Room({ opening }: { opening: Opening }) {
       {client && (
         <Text as="p" size="1" color="gray" className="room-note">
           Open in Claude shares this private room link with Claude in a prepared
-          message. Review and send it there. Configure Claude opens Allowed
-          websites and copies this server’s domain for you to paste and add.
-          Only needed if network access is blocked.
+          message. Review and send it there.
         </Text>
       )}
+      {client && <ClaudeSetup />}
       <Status text={status} />
       {copyText && (
         <TextArea

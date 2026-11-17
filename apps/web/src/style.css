@@ -200,6 +200,26 @@ footer {
   line-height: 1.7;
   margin: 20px 0 0;
 }
+.claude-setup {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #ebebeb;
+}
+.claude-setup p {
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+.setup-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+.setup-actions > .rt-TextFieldRoot {
+  flex: 1 1 280px;
+  min-width: 0;
+}
 .security > h2 {
   margin: 28px 0 12px;
 }

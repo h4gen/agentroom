@@ -69,7 +69,7 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   expect(providerURL.origin).toBe("https://claude.ai");
   expect(providerURL.searchParams.get("q")).toContain(url);
   const setupLink = page.getByRole("link", {
-    name: "Configure Claude",
+    name: "2. Open Claude settings",
     exact: true,
   });
   await expect(setupLink).toHaveAttribute(
@@ -81,23 +81,37 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   expect(await setupLink.getAttribute("href")).not.toContain(invite.access);
   // Test the real Clipboard API in the application's browser context. The
   // external settings page is not needed for this local contract check.
-  await page
-    .context()
-    .grantPermissions(["clipboard-read", "clipboard-write"], {
-      origin: baseURL!,
-    });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: baseURL!,
+  });
   await page
     .context()
     .route("https://claude.ai/**", (route) =>
       route.fulfill({ body: "External settings navigation test" }),
     );
+  const domain = new URL(baseURL!).hostname;
+  await expect(
+    page.getByRole("textbox", { name: "Website to allow" }),
+  ).toHaveValue(domain);
+  await page
+    .getByRole("button", { name: "1. Copy domain", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Copied", exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    domain,
+  );
+  // Opening settings is separate and must not overwrite the user's clipboard.
+  await page.evaluate(() =>
+    navigator.clipboard.writeText("clipboard-unchanged"),
+  );
   const popup = page.waitForEvent("popup");
   await setupLink.click();
   await (await popup).close();
   await page.bringToFront();
-  await expect(page.getByRole("status")).toContainText("Server domain copied");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    new URL(baseURL!).hostname,
+    "clipboard-unchanged",
   );
   expect(invite.origin).toBe(baseURL);
   const fromBrowser = await cli(["read", "--invite-stdin", "--json"], url);
