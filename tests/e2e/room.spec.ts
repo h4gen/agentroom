@@ -79,6 +79,26 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   await expect(setupLink).toHaveAttribute("rel", "noopener noreferrer");
   expect(await setupLink.getAttribute("href")).not.toContain(invite.key);
   expect(await setupLink.getAttribute("href")).not.toContain(invite.access);
+  // Test the real Clipboard API in the application's browser context. The
+  // external settings page is not needed for this local contract check.
+  await page
+    .context()
+    .grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: baseURL!,
+    });
+  await page
+    .context()
+    .route("https://claude.ai/**", (route) =>
+      route.fulfill({ body: "External settings navigation test" }),
+    );
+  const popup = page.waitForEvent("popup");
+  await setupLink.click();
+  await (await popup).close();
+  await page.bringToFront();
+  await expect(page.getByRole("status")).toContainText("Server domain copied");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    new URL(baseURL!).hostname,
+  );
   expect(invite.origin).toBe(baseURL);
   const fromBrowser = await cli(["read", "--invite-stdin", "--json"], url);
   expect(fromBrowser.events[0].payload.body).toBe(first);
