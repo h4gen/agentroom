@@ -1,0 +1,18 @@
+{
+  "room_id": "AAAAAAAAAAAAAAAAAAAAAA",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "aad": "agentroom/v1|event|AAAAAAAAAAAAAAAAAAAAAA|00000000-0000-4000-8000-000000000001",
+  "payload": {
+    "v": 1,
+    "type": "message",
+    "actor": "Alex",
+    "body": "Grüße 🌱",
+    "reply_to": null,
+    "client_created_at": "2026-11-17T12:00:00Z"
+  },
+  "envelope": {
+    "event_id": "00000000-0000-4000-8000-000000000001",
+    "nonce": "AAECAwQFBgcICQoL",
+    "ciphertext": "PCCgOf_U7jn5OOfuk9NaAOal9FWXHn1QGgaG8XIbIogjUcKZ1-M-uhbLG5SqvQp_nJrcTsWzgyqgG5s7NMGHi4BQvyWnvgRbciHGAsOtbYRR76cWKQAhDZyJ-6gnkc2v8dpr1pZ35SuvMQ-FHEQTRYpXWJvTnwfnv8ZBrcsURvL4snQuxuhNfQ"
+  }
+}

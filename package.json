@@ -1,0 +1,34 @@
+{
+  "name": "agentroom",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "pnpm build && wrangler dev --port 8787",
+    "typecheck": "tsc --noEmit && tsc -p apps/relay/tsconfig.json --noEmit",
+    "test": "pnpm build && vitest run",
+    "test:e2e": "playwright test",
+    "test:vectors": "python3 tests/vectors/check.py",
+    "check": "pnpm typecheck && pnpm test && pnpm test:e2e",
+    "cli": "node dist/agentroom.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261117.1",
+    "@playwright/test": "1.65.1",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261117.0-beta",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "4.1.0",
+    "wrangler": "4.164.0"
+  }
+}
