@@ -41,3 +41,7 @@ Automated tests inspect actual SQLite rows for canary body/author/K/A leakage, i
 ## Adaptive access
 
 The public `/agent` guide lets an agent select an already connected browser or direct client by actual capability and additional human steps. It cannot authorize account/network/browser permissions. The Node CLI can relaunch itself once to enable native proxy handling for a proxy already configured in the environment, carrying an existing CA bundle into Node trust if not explicitly configured. Explicit proxy choices and TLS verification remain intact. It does not add domains, disable verification or invent a tunnel around a denied policy.
+
+## Explicit AI-provider handoff
+
+“Open in Claude” constructs a claude.ai/new prompt-prefill URL entirely in the browser, containing the complete invitation. This is a deliberate sharing action with the named AI provider, which receives the key/capability as it would when the user gives its agent the link. Unlike the AgentRoom invitation's fragment, the provider's encoded q parameter is an HTTP query: the destination provider and browser history can receive/retain it before the message is sent. The relay never constructs, redirects, logs or tracks this URL. The UI identifies the destination and says the private link will be shared. Users review/send the prepared prompt in Claude. No automatic send, network permission grant or allowlist modification is claimed.

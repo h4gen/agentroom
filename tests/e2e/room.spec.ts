@@ -59,6 +59,15 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   await expect(page.locator(".message-body")).toHaveText(first);
   const invite = parseInvite(page.url()),
     url = page.url();
+  const providerLink = page.getByRole("link", {
+    name: "Open in Claude",
+    exact: true,
+  });
+  await expect(providerLink).toHaveAttribute("target", "_blank");
+  await expect(providerLink).toHaveAttribute("rel", "noopener noreferrer");
+  const providerURL = new URL((await providerLink.getAttribute("href"))!);
+  expect(providerURL.origin).toBe("https://claude.ai");
+  expect(providerURL.searchParams.get("q")).toContain(url);
   expect(invite.origin).toBe(baseURL);
   const fromBrowser = await cli(["read", "--invite-stdin", "--json"], url);
   expect(fromBrowser.events[0].payload.body).toBe(first);

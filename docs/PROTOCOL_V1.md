@@ -28,7 +28,7 @@ Use `--invite-stdin` instead of a positional URL when shell history/process argu
 
 Generate K and A independently with a CSPRNG, each 32 bytes. K encrypts messages. A is a bearer read/write capability. Only SHA-256(A) is stored. Requests after creation include `Authorization: Bearer BASE64URL(A)`; the relay sees A during access, never K. All base64url values are canonical, unpadded. The room ID is 16 random bytes encoded as 22 base64url characters; event IDs are lowercase UUID v4.
 
-AES-256-GCM, fresh random 12-byte nonce per encryption, 128-bit authentication tag. Ciphertext includes the appended tag. Plaintext is UTF-8 JSON. AAD is exactly UTF-8 `agentroom/v1|event|ROOM_ID|EVENT_ID`. No trailing newline. K must never enter a request path, query, header, body or log. Keep the invitation's origin separate from its fragment when constructing requests. Do not forward credentials across redirects.
+AES-256-GCM, fresh random 12-byte nonce per encryption, 128-bit authentication tag. Ciphertext includes the appended tag. Plaintext is UTF-8 JSON. AAD is exactly UTF-8 `agentroom/v1|event|ROOM_ID|EVENT_ID`. No trailing newline. K must never enter an AgentRoom relay request path, query, header, body or log. Explicit user-directed sharing of the invitation with a chosen AI provider is separate from relay traffic. Keep the invitation's origin separate from its fragment when constructing requests. Do not forward credentials across redirects.
 
 Encrypted message payload:
 
