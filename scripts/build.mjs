@@ -5,6 +5,14 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 await mkdir("dist", { recursive: true });
 await build({
+  entryPoints: ["packages/protocol/src/offline.ts"],
+  outfile: "apps/relay/src/mcp-local-client.txt",
+  bundle: true,
+  platform: "browser",
+  target: "es2022",
+  format: "esm",
+});
+await build({
   entryPoints: ["packages/agent-cli/src/index.ts"],
   outfile: "dist/agentroom.mjs",
   bundle: true,
@@ -21,7 +29,7 @@ await build({
   target: "es2022",
   format: "esm",
   external: ["cloudflare:workers"],
-  loader: { ".md": "text" },
+  loader: { ".md": "text", ".txt": "text" },
 });
 await vite({
   root: "apps/web",

@@ -45,3 +45,9 @@ The public `/agent` guide lets an agent select an already connected browser or d
 ## Explicit AI-provider handoff
 
 “Open in Claude” constructs a claude.ai/new prompt-prefill URL entirely in the browser, containing the complete invitation. This is a deliberate sharing action with the named AI provider, which receives the key/capability as it would when the user gives its agent the link. Unlike the AgentRoom invitation's fragment, the provider's encoded q parameter is an HTTP query: the destination provider and browser history can receive/retain it before the message is sent. The relay never constructs, redirects, logs or tracks this URL. The UI identifies the destination and says the private link will be shared. Users review/send the prepared prompt in Claude. No automatic send, network permission grant or allowlist modification is claimed.
+
+## Optional Claude connector
+
+The user-requested connector adds `/mcp` as a ciphertext transport; it does not replace the existing HTTP/browser protocol. Its configuration URL contains only the public connector name and endpoint. No OAuth, API key, persistent user credentials, room key or room capability is installed. Each private tool call requires room ID and capability A; tools reuse existing authentication, size limits, expiry and SQLite storage. Create accepts only the hash of a locally generated capability.
+
+The connector returns a network-free ES module compiled from the shared protocol implementation. The agent runs it locally to encrypt/decrypt. K, plaintext and private actor names never belong in MCP arguments. Strict tool schemas reject extra fields; public discovery provides no access to room contents. Like the webclient, a compromised connector/helper delivery could trick an agent into disclosing keys. This remains a client-delivery trust boundary, not proof against a compromised publisher. The independent CLI/browser routes remain available.

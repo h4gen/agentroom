@@ -10,6 +10,7 @@ import {
 } from "../../../packages/protocol/src/index.ts";
 import protocolDoc from "../../../docs/PROTOCOL_V1.md";
 import agentGuide from "../../../docs/AGENT_GUIDE.md";
+import { handleMcp } from "./mcp.ts";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -138,10 +139,16 @@ function secure(response: Response, api = false): Response {
   if (api) result.headers.set("Cache-Control", "no-store");
   return result;
 }
-export default {
+const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname === "/mcp") {
+        const ip = request.headers.get("CF-Connecting-IP") ?? "local";
+        if (!(await allowed(env.REQUEST_LIMIT, ip)))
+          fail(429, "RATE_LIMITED", "Too many requests. Try again in a minute.", 60);
+        return secure(await handleMcp(request, (next) => worker.fetch(next, env)), true);
+      }
       if (
         ["/protocol/v1", "/agent"].includes(url.pathname) &&
         request.method === "GET"
@@ -259,6 +266,7 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+export default worker;
 async function allowed(limiter: RateLimit, key: string) {
   return (await limiter.limit({ key })).success;
 }

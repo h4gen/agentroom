@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 const origin = new URL(
   process.argv[2] || "https://agentroom-v0.hagen-hoferichter.workers.dev",
 ).origin;
@@ -130,6 +133,62 @@ try {
   );
   const key = new URLSearchParams(url.hash.slice(1)).get("k");
   check(!raw.includes(key), "Key leaked in relay response.");
+  const sdk = new Client({ name: "agentroom-live-smoke", version: "1" });
+  await sdk.connect(
+    new StreamableHTTPClientTransport(new URL(origin + "/mcp")),
+  );
+  try {
+    const list = await sdk.listTools();
+    check(list.tools.length === 4, "MCP tool discovery failed.");
+    const guide = await sdk.callTool({
+      name: "agentroom_guide",
+      arguments: {},
+    });
+    check(guide.content?.[1]?.type === "text", "MCP local helper missing.");
+    const localPath = join(dir, "agentroom-local.mjs");
+    await writeFile(localPath, guide.content[1].text);
+    const local = await import(pathToFileURL(localPath).href);
+    const args = await local.publishArgs(
+      created.url,
+      "MCP live smoke encrypted reply",
+      "MCP smoke",
+    );
+    const published = await sdk.callTool({
+      name: "agentroom_publish",
+      arguments: args,
+    });
+    const retried = await sdk.callTool({
+      name: "agentroom_publish",
+      arguments: args,
+    });
+    check(
+      published.structuredContent?.seq === 3 &&
+        retried.structuredContent?.seq === 3,
+      "MCP write/retry failed.",
+    );
+    const page = await sdk.callTool({
+      name: "agentroom_read",
+      arguments: local.readArgs(created.url, 2),
+    });
+    const decoded = await local.decryptPage(
+      created.url,
+      page.structuredContent,
+    );
+    check(
+      decoded.events[0]?.payload?.body === "MCP live smoke encrypted reply",
+      "MCP local decryption failed.",
+    );
+    check(
+      cli(["read", "--invite-stdin", "--after", "2", "--json"], created.url)
+        .events[0]?.payload?.body === "MCP live smoke encrypted reply",
+      "CLI could not read MCP message.",
+    );
+    console.log(
+      "Live MCP: discovery, delivered offline helper, ciphertext publish/read, exact retry and CLI interoperability passed.",
+    );
+  } finally {
+    await sdk.close();
+  }
   await writeFile(
     statePath,
     JSON.stringify({ origin, url: created.url, marker }),

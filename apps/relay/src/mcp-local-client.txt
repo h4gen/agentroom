@@ -1,0 +1,239 @@
+// packages/protocol/src/index.ts
+var MAX_EVENT_BYTES = 65536;
+var ROOM_ID = /^[A-Za-z0-9_-]{22}$/;
+var EVENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+var encoder = new TextEncoder();
+var ProtocolError = class extends Error {
+};
+function base64url(bytes) {
+  let s = "";
+  for (const byte of bytes) s += String.fromCharCode(byte);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function unbase64url(value, length) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value))
+    throw new ProtocolError("Invalid base64url.");
+  let result;
+  try {
+    result = Uint8Array.from(
+      atob(value.replace(/-/g, "+").replace(/_/g, "/")),
+      (c) => c.charCodeAt(0)
+    );
+  } catch {
+    throw new ProtocolError("Invalid base64url.");
+  }
+  if (base64url(result) !== value || length !== void 0 && result.length !== length)
+    throw new ProtocolError("Invalid base64url length or encoding.");
+  return result;
+}
+function randomSecret() {
+  return base64url(crypto.getRandomValues(new Uint8Array(32)));
+}
+async function hashAccess(access) {
+  return base64url(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", unbase64url(access, 32))
+    )
+  );
+}
+function validOrigin(value) {
+  const url = new URL(value);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:") || url.username || url.password || url.search || url.hash || url.pathname !== "/")
+    throw new ProtocolError(
+      "Use an HTTPS origin (HTTP is allowed only on localhost)."
+    );
+  return url.origin;
+}
+function parseInvite(value) {
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new ProtocolError("A full invitation URL is required.");
+  }
+  const origin = validOrigin(url.origin);
+  const match = /^\/r\/([A-Za-z0-9_-]{22})$/.exec(url.pathname);
+  if (!match || url.search || url.username || url.password)
+    throw new ProtocolError("Invalid invitation URL.");
+  const params = new URLSearchParams(url.hash.slice(1));
+  if (params.size !== 2 || params.getAll("k").length !== 1 || params.getAll("a").length !== 1)
+    throw new ProtocolError(
+      "Keep the complete invitation link, including #k=\u2026&a=\u2026."
+    );
+  const key = params.get("k") ?? "", access = params.get("a") ?? "";
+  unbase64url(key, 32);
+  unbase64url(access, 32);
+  return { origin, roomId: match[1], key, access };
+}
+function inviteURL(invite) {
+  const value = `${invite.origin}/r/${invite.roomId}#k=${invite.key}&a=${invite.access}`;
+  parseInvite(value);
+  return value;
+}
+function message(body, actor = "Anonymous", reply_to = null) {
+  const value = {
+    v: 1,
+    type: "message",
+    actor,
+    body,
+    reply_to,
+    client_created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  validateMessage(value);
+  return value;
+}
+function validateMessage(value) {
+  const m = value;
+  if (!m || m.v !== 1 || m.type !== "message" || typeof m.actor !== "string" || m.actor.length > 120 || typeof m.body !== "string" || m.reply_to !== null && (typeof m.reply_to !== "string" || !EVENT_ID.test(m.reply_to)) || typeof m.client_created_at !== "string" || !Number.isFinite(Date.parse(m.client_created_at)))
+    throw new ProtocolError("Unsupported or invalid decrypted message.");
+}
+function validateEnvelope(value) {
+  const e = value;
+  if (!e || typeof e.event_id !== "string" || !EVENT_ID.test(e.event_id) || Object.keys(e).sort().join(",") !== "ciphertext,event_id,nonce")
+    throw new ProtocolError("Invalid event envelope.");
+  unbase64url(e.nonce, 12);
+  const bytes = unbase64url(e.ciphertext);
+  if (bytes.length < 16)
+    throw new ProtocolError("Ciphertext is missing its authentication tag.");
+  if (bytes.length > MAX_EVENT_BYTES)
+    throw new ProtocolError("Event exceeds 64 KiB.");
+}
+function aad(roomId, eventId) {
+  if (!ROOM_ID.test(roomId) || !EVENT_ID.test(eventId))
+    throw new ProtocolError("Invalid room or event ID.");
+  return new Uint8Array(
+    encoder.encode(`agentroom/v1|event|${roomId}|${eventId}`)
+  );
+}
+async function encrypt(roomId, key, payload) {
+  validateMessage(payload);
+  const event_id = crypto.randomUUID(), nonce = crypto.getRandomValues(new Uint8Array(12));
+  const secret = await crypto.subtle.importKey(
+    "raw",
+    unbase64url(key, 32),
+    "AES-GCM",
+    false,
+    ["encrypt"]
+  );
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: nonce,
+      additionalData: aad(roomId, event_id),
+      tagLength: 128
+    },
+    secret,
+    encoder.encode(JSON.stringify(payload))
+  );
+  const result = {
+    event_id,
+    nonce: base64url(nonce),
+    ciphertext: base64url(new Uint8Array(ciphertext))
+  };
+  validateEnvelope(result);
+  return result;
+}
+async function decrypt(roomId, key, event) {
+  validateEnvelope({
+    event_id: event.event_id,
+    nonce: event.nonce,
+    ciphertext: event.ciphertext
+  });
+  const secret = await crypto.subtle.importKey(
+    "raw",
+    unbase64url(key, 32),
+    "AES-GCM",
+    false,
+    ["decrypt"]
+  );
+  let plaintext;
+  try {
+    plaintext = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: unbase64url(event.nonce, 12),
+        additionalData: aad(roomId, event.event_id),
+        tagLength: 128
+      },
+      secret,
+      unbase64url(event.ciphertext)
+    );
+  } catch {
+    throw new ProtocolError(
+      "Cannot decrypt event: wrong key or altered ciphertext/AAD."
+    );
+  }
+  let result;
+  try {
+    result = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+        plaintext
+      )
+    );
+  } catch {
+    throw new ProtocolError("Invalid decrypted JSON.");
+  }
+  validateMessage(result);
+  return result;
+}
+
+// packages/protocol/src/offline.ts
+function readArgs(link, after = 0, limit = 100) {
+  const { roomId, access } = parseInvite(link);
+  return { room_id: roomId, access, after, limit };
+}
+async function publishArgs(link, body, actor = "Anonymous") {
+  const { roomId, access, key } = parseInvite(link);
+  return {
+    room_id: roomId,
+    access,
+    envelope: await encrypt(roomId, key, message(body, actor))
+  };
+}
+async function decryptPage(link, page) {
+  const { roomId, key } = parseInvite(link);
+  const events = await Promise.all(
+    page.events.map(async (event) => {
+      try {
+        return {
+          seq: event.seq,
+          event_id: event.event_id,
+          payload: await decrypt(roomId, key, event)
+        };
+      } catch {
+        return {
+          seq: event.seq,
+          event_id: event.event_id,
+          error: "Cannot decrypt event: wrong key or altered data."
+        };
+      }
+    })
+  );
+  return { events, next_after: page.next_after, has_more: page.has_more };
+}
+async function createArgs(ttl_days = 14) {
+  const key = randomSecret(), access = randomSecret();
+  return {
+    local: { key, access },
+    request: {
+      protocol: 1,
+      access_hash: await hashAccess(access),
+      ttl_days
+    }
+  };
+}
+function finishCreate(origin, result, local) {
+  return inviteURL({
+    origin: validOrigin(origin),
+    roomId: result.room_id,
+    ...local
+  });
+}
+export {
+  createArgs,
+  decryptPage,
+  finishCreate,
+  publishArgs,
+  readArgs
+};

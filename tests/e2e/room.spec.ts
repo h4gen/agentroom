@@ -66,6 +66,15 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   await expect(providerLink).toHaveAttribute("target", "_blank");
   await expect(providerLink).toHaveAttribute("rel", "noopener noreferrer");
   const providerURL = new URL((await providerLink.getAttribute("href"))!);
+  const configLink = page.getByRole("link", {
+    name: "Configure Claude",
+    exact: true,
+  });
+  const configURL = new URL((await configLink.getAttribute("href"))!);
+  expect(configURL.searchParams.get("connectorUrl")).toBe(`${baseURL}/mcp`);
+  expect(configURL.href).not.toContain(invite.key);
+  expect(configURL.href).not.toContain(invite.access);
+  await expect(configLink).toHaveAttribute("rel", "noopener noreferrer");
   expect(providerURL.origin).toBe("https://claude.ai");
   expect(providerURL.searchParams.get("q")).toContain(url);
   expect(invite.origin).toBe(baseURL);
