@@ -122,15 +122,18 @@ async function body(
     return fail(400, "INVALID_INPUT", "Invalid JSON.");
   }
 }
-function secure(response: Response, api = false): Response {
+function secure(
+  response: Response,
+  api = false,
+  styleNonce?: string,
+): Response {
   const result = new Response(response.body, response);
   const headers: Record<string, string> = {
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Content-Security-Policy":
-      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "Content-Security-Policy": `default-src 'none'; script-src 'self'; style-src 'self'${styleNonce ? ` 'nonce-${styleNonce}'` : ""}; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
     "Strict-Transport-Security": "max-age=31536000",
   };
   for (const [key, value] of Object.entries(headers))
@@ -170,18 +173,33 @@ export default {
         // Explicit routes: API typos must never receive the SPA shell with a 200.
         if (
           url.pathname === "/" ||
+          url.pathname === "/index.html" ||
           url.pathname === "/security" ||
           /^\/r\/[A-Za-z0-9_-]{22}$/.test(url.pathname)
         ) {
           const assetUrl = new URL("/index.html", url.origin);
+          const styleNonce = base64url(
+            crypto.getRandomValues(new Uint8Array(16)),
+          );
+          const html = await env.ASSETS.fetch(
+            new Request(assetUrl, {
+              method: request.method,
+              headers: request.headers,
+            }),
+          );
           return secure(
-            await env.ASSETS.fetch(
-              new Request(assetUrl, {
-                method: request.method,
-                headers: request.headers,
-              }),
-            ),
+            new HTMLRewriter()
+              .on("head", {
+                element(element) {
+                  element.append(
+                    `<meta name="style-nonce" content="${styleNonce}">`,
+                    { html: true },
+                  );
+                },
+              })
+              .transform(html),
             true,
+            styleNonce,
           );
         }
         return secure(await env.ASSETS.fetch(request));

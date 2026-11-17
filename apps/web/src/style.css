@@ -200,6 +200,33 @@ footer {
   line-height: 1.7;
   margin: 20px 0 0;
 }
+.dialog-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+}
+.connect-content {
+  margin-top: 24px;
+}
+.connect-content p {
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0 12px;
+}
+.step-title {
+  font-size: 17px;
+  font-weight: 500;
+  margin: 12px 0;
+}
+.step-title:focus {
+  outline: none;
+}
 .claude-setup {
   margin-top: 24px;
   padding-top: 20px;

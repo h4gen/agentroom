@@ -50,6 +50,18 @@ Follow-up source inspection: [Claude network setup research](CLAUDE_NETWORK_SETU
 
 ## Explicit copy and open setup controls
 
+Historical flow below is superseded by the approved read-only/modals flow recorded at the end of this document.
+
 The room now shows the public relay hostname in a selectable read-only field, followed by **1. Copy domain** and **2. Open Claude settings**. Copy provides local success feedback; blocked clipboard access focuses/selects the visible hostname for manual copying. Opening the verified Allowed websites view is a separate link and does not overwrite the clipboard. The adjacent instruction says to paste into Add a website and click Add. Setup is presented as a one-time step only for blocked access. Existing invitation copying, agent instructions, Open in Claude, refresh and message exchange remain available.
 
 The existing desktop/mobile browser scenarios verify the visible hostname, exact clipboard value, copy feedback, correct settings destination, unchanged clipboard on opening settings, and absence of room secrets in the setup link. The 21 unit/runtime tests, four browser scenarios and independent Python vectors passed before release. This is the user's accepted copy/open/paste/Add flow, not native URL-based domain prefill.
+
+## Approved read-only room and connection modals
+
+The owner explicitly replaced human message composition with a read-only room state view, including removing the first-message field. Room creation/retention remain available. Contributions are still published through the unchanged CLI/API and displayed with unverified attribution and contribution time. The visible viewer checks activity every eight seconds, checks again on focus, pauses hidden tabs, backs off on errors and stops on expired/missing rooms. Manual Refresh remains available. No scheduling or agent wakeups are added.
+
+The room now has exactly the two provider connection entries **Connect with GPT** and **Connect with Claude**. GPT opens a Radix modal with a ready-to-copy connect prompt and Open in ChatGPT. Claude's modal has three stages: copy the public hostname; open the verified Allowed websites view and explicitly confirm adding it; copy the connect prompt or Open in Claude. Already set up jumps to stage three. Back, Close and Escape retain standard modal behavior. Copy/open feedback never reports an agent connection. Clipboard-denial fallbacks keep the values selectable.
+
+The wider uncommitted UX experiment was discarded: no new invitation-entry form, creation-options drawer, local draft storage/protection, sending shortcuts or UI write-retry mechanisms are part of this release. Only the agreed read-only/state-refresh and modal handoff flow is implemented. Previous browser-publishing acceptance remains historical evidence of the old UI, not a current capability; `/agent` now documents browser reading and direct-client publishing accurately.
+
+Validation: 21 unit/runtime tests, six desktop/mobile browser scenarios and independent Python vectors. The scenarios verify modal stages, settings destination, clipboard values, skip/back/reset, Escape/focus return, blocked clipboard fallback, automatic agent-result display, CLI interoperability, retained history, decryption errors, inert HTML and no browser message-write requests. The complete invitation survives both provider query encodings. Console/CSP errors are checked; fresh HTML style nonces allow only the modal library's nonce-bearing stylesheet without enabling unsafe-inline.

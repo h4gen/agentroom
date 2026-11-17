@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { setNonce } from "get-nonce";
 import {
   Theme,
   Heading,
   Text,
   Button,
-  TextField,
   TextArea,
   Badge,
   Separator,
@@ -18,20 +18,11 @@ import {
   RoomClient,
 } from "../../../packages/protocol/src/client.ts";
 import { parseInvite } from "../../../packages/protocol/src/index.ts";
-import {
-  agentPrompt,
-  claudeWebURL,
-  CLAUDE_NETWORK_SETTINGS,
-} from "./invitations.ts";
+import { ConnectDialog } from "./connect-dialog.tsx";
+import { useRoom } from "./use-room.ts";
 
 const SOURCE = "https://github.com/h4gen/agentroom";
-type ReadEvent = Awaited<ReturnType<RoomClient["read"]>>["events"][number];
-type Opening = {
-  url: string;
-  actor?: string;
-  draft?: string;
-  warning?: string;
-};
+type Opening = { url: string };
 function Status({ text }: { text: string }) {
   return (
     <p className="notice" role="status" hidden={!text}>
@@ -103,33 +94,18 @@ function App() {
   );
 }
 function Home({ open }: { open: (opening: Opening) => void }) {
-  const [actor, setActor] = useState(""),
-    [body, setBody] = useState(""),
-    [ttl, setTtl] = useState("14"),
+  const [ttl, setTtl] = useState("14"),
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false);
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setStatus("Creating room…");
     try {
       const result = await createRoom(location.origin, Number(ttl));
       history.pushState(null, "", result.url);
-      let draft = "",
-        warning = "";
-      if (body) {
-        try {
-          await new RoomClient(result.invite).publish(
-            body,
-            actor.trim() || "Anonymous",
-          );
-        } catch {
-          draft = body;
-          warning =
-            "Room created. Your first message could not be confirmed. Refresh before sending it again.";
-        }
-      }
-      open({ url: result.url, actor, draft, warning });
+      open({ url: result.url });
     } catch (error) {
       setStatus(errorText(error));
     } finally {
@@ -156,30 +132,11 @@ function Home({ open }: { open: (opening: Opening) => void }) {
             Encrypted
           </Badge>
         </div>
+        <Text as="p" size="2" color="gray">
+          Create a room, then connect your agent. Give your task to the agent in
+          its own chat.
+        </Text>
         <form onSubmit={create}>
-          <label htmlFor="actor">
-            Your display name <span>Optional · unverified</span>
-          </label>
-          <TextField.Root
-            id="actor"
-            value={actor}
-            onChange={(event) => setActor(event.target.value)}
-            maxLength={120}
-            autoComplete="off"
-            placeholder="Name"
-            variant="surface"
-          />
-          <label htmlFor="initial">
-            First message <span>Optional</span>
-          </label>
-          <TextArea
-            id="initial"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={5}
-            placeholder="A question, context, or a result to share."
-            variant="surface"
-          />
           <div className="form-bottom">
             <div className="retention">
               <label htmlFor="ttl">Expires after</label>
@@ -208,74 +165,14 @@ function Home({ open }: { open: (opening: Opening) => void }) {
           Keep it private.
         </Text>
         <Text as="p" size="2" color="gray">
-          Give the link and your task to your AI assistant. It uses the tools
-          available in your session. Updates are asynchronous.
+          The room view is read-only. Your agents publish results; this page
+          shows their activity.
         </Text>
       </div>
     </>
   );
 }
-function ClaudeSetup() {
-  const domain = location.hostname;
-  const input = useRef<HTMLInputElement>(null);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
-  async function copyDomain() {
-    try {
-      await navigator.clipboard.writeText(domain);
-      setCopied(true);
-      setCopyFailed(false);
-    } catch {
-      setCopied(false);
-      setCopyFailed(true);
-      input.current?.focus();
-      input.current?.select();
-    }
-  }
-  return (
-    <section className="claude-setup" aria-labelledby="claude-setup-title">
-      <Text as="p" size="2" weight="medium" id="claude-setup-title">
-        Claude network access
-      </Text>
-      <Text as="p" size="1" color="gray">
-        Set up once, only if Claude cannot access this room.
-      </Text>
-      <div className="setup-actions">
-        <TextField.Root
-          ref={input}
-          aria-label="Website to allow"
-          value={domain}
-          readOnly
-          onFocus={(event) => event.currentTarget.select()}
-        />
-        <Button
-          color="gray"
-          variant="surface"
-          onClick={() => void copyDomain()}
-        >
-          <span aria-live="polite">{copied ? "Copied" : "1. Copy domain"}</span>
-        </Button>
-        <Button asChild color="gray" variant="surface">
-          <a
-            href={CLAUDE_NETWORK_SETTINGS}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            2. Open Claude settings
-          </a>
-        </Button>
-      </div>
-      <Text as="p" size="1" color="gray" aria-live="polite">
-        {copyFailed
-          ? "Copy the selected domain, then open Claude settings. "
-          : ""}
-        Paste into “Add a website” and click “Add”.
-      </Text>
-    </section>
-  );
-}
 function Room({ opening }: { opening: Opening }) {
-  const initialWarning = useRef(opening.warning || "");
   const parsed = useMemo(() => {
     try {
       return { invite: parseInvite(opening.url) };
@@ -287,68 +184,29 @@ function Room({ opening }: { opening: Opening }) {
     () => (parsed.invite ? new RoomClient(parsed.invite) : undefined),
     [parsed],
   );
-  const [records, setRecords] = useState<ReadEvent[]>([]),
-    [cursor, setCursor] = useState(0),
-    [actor, setActor] = useState(opening.actor || ""),
-    [draft, setDraft] = useState(opening.draft || ""),
-    [status, setStatus] = useState(opening.warning || parsed.error || ""),
-    [expires, setExpires] = useState(""),
-    [busy, setBusy] = useState(false),
-    [sending, setSending] = useState(false),
-    [copyText, setCopyText] = useState("");
-  async function refresh() {
-    if (!client || busy) return;
-    setBusy(true);
+  const { records, expires, busy, error, refresh } = useRoom(client);
+  const [copyText, setCopyText] = useState("");
+  const [copied, setCopied] = useState(false);
+  async function copyLink() {
     try {
-      const [info, result] = await Promise.all([
-        client.status(),
-        client.read(cursor),
-      ]);
-      const map = new Map(records.map((event) => [event.seq, event]));
-      for (const event of result.events) map.set(event.seq, event);
-      const combined = [...map.values()];
-      setRecords(combined);
-      setCursor(result.next_after);
-      setExpires(info.expires_at);
-      setStatus(
-        combined.some((event) => event.error)
-          ? "Some events could not be decrypted. The key may be wrong or data may have been altered. Reload to retry all events."
-          : initialWarning.current || "Up to date.",
-      );
-    } catch (error) {
-      setStatus(errorText(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  useEffect(() => {
-    void refresh();
-  }, [client]);
-  async function publish(event: React.FormEvent) {
-    event.preventDefault();
-    if (!client || !draft) return;
-    setSending(true);
-    try {
-      await client.publish(draft, actor.trim() || "Anonymous");
-      setDraft("");
-      initialWarning.current = "";
-      await refresh();
-    } catch (error) {
-      setStatus(errorText(error));
-    } finally {
-      setSending(false);
-    }
-  }
-  async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setStatus("Copied. Share privately.");
+      await navigator.clipboard.writeText(opening.url);
+      setCopied(true);
+      setCopyText("");
     } catch {
-      setCopyText(text);
-      setStatus("Copy the selected text below.");
+      setCopyText(opening.url);
     }
   }
-  const instructions = parsed.invite ? agentPrompt(opening.url) : "";
+  const last = [...records].reverse().find((event) => event.payload)?.payload;
+  const notice = [
+    parsed.error,
+    error,
+    records.some((event) => event.error)
+      ? "Some events could not be decrypted. The key may be wrong or data may have been altered."
+      : "",
+    copied ? "Invitation link copied. Share privately." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <>
       <div className="room-heading">
@@ -363,33 +221,26 @@ function Room({ opening }: { opening: Opening }) {
                 ? "Opening room…"
                 : "The full invitation link is required."}
           </Text>
+          {last && (
+            <Text as="p" size="1" color="gray">
+              Last contribution:{" "}
+              {new Date(last.client_created_at).toLocaleString()}
+            </Text>
+          )}
         </div>
         <Badge color="gray" variant="outline">
-          Encrypted
+          Read-only view
         </Badge>
       </div>
       <div className="toolbar">
-        <Button disabled={!client} onClick={() => void copy(opening.url)}>
-          Copy link
-        </Button>
-        <Button
-          color="gray"
-          variant="surface"
-          disabled={!client}
-          onClick={() => void copy(instructions)}
-        >
-          Agent instructions
+        <Button disabled={!client} onClick={() => void copyLink()}>
+          {copied ? "Link copied" : "Copy link"}
         </Button>
         {client && (
-          <Button asChild color="gray" variant="surface">
-            <a
-              href={claudeWebURL(opening.url)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open in Claude
-            </a>
-          </Button>
+          <>
+            <ConnectDialog provider="gpt" invitation={opening.url} />
+            <ConnectDialog provider="claude" invitation={opening.url} />
+          </>
         )}
         <Button
           color="gray"
@@ -401,36 +252,33 @@ function Room({ opening }: { opening: Opening }) {
           Refresh
         </Button>
       </div>
-      {client && (
-        <Text as="p" size="1" color="gray" className="room-note">
-          Open in Claude shares this private room link with Claude in a prepared
-          message. Review and send it there.
-        </Text>
-      )}
-      {client && <ClaudeSetup />}
-      <Status text={status} />
+      <Status text={notice} />
       {copyText && (
         <TextArea
-          aria-label="Copy text"
+          aria-label="Copy invitation link"
           value={copyText}
           readOnly
           onFocus={(event) => event.target.select()}
-          rows={4}
+          rows={3}
         />
       )}
-      <section className="panel messages-panel" aria-label="Room messages">
+      <section className="panel messages-panel" aria-label="Room activity">
         <div className="panel-heading">
           <Heading as="h2" size="3" weight="medium">
-            Messages
+            Room activity
           </Heading>
           <Text size="1" color="gray">
-            {records.length}
+            {records.length} · Updates automatically
           </Text>
         </div>
         <div id="messages">
           {records.length === 0 ? (
             <Text as="p" color="gray" size="2" className="empty">
-              {client && !expires ? "Loading messages…" : "No messages yet."}
+              {error
+                ? "Room activity is unavailable right now."
+                : client && !expires
+                  ? "Loading room activity…"
+                  : "No agent activity yet. Connect an agent to start."}
             </Text>
           ) : (
             records.map((event) => (
@@ -451,50 +299,10 @@ function Room({ opening }: { opening: Opening }) {
           )}
         </div>
       </section>
-      {client && (
-        <section
-          className="panel compose-panel"
-          aria-labelledby="compose-title"
-        >
-          <Heading as="h2" size="3" weight="medium" id="compose-title">
-            Add a message
-          </Heading>
-          <form onSubmit={publish}>
-            <label htmlFor="author">
-              Display name <span>Unverified</span>
-            </label>
-            <TextField.Root
-              id="author"
-              className="name-field"
-              value={actor}
-              onChange={(event) => setActor(event.target.value)}
-              maxLength={120}
-              autoComplete="off"
-              placeholder="Anonymous"
-            />
-            <label htmlFor="draft">Message</label>
-            <TextArea
-              id="draft"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={5}
-              required
-              placeholder="Only share what everyone with the link should read."
-            />
-            <div className="form-bottom">
-              <Text size="1" color="gray">
-                Encrypted in this browser before sending.
-              </Text>
-              <Button type="submit" disabled={busy} loading={sending}>
-                Send message
-              </Button>
-            </div>
-          </form>
-        </section>
-      )}
       <Text as="p" size="1" color="gray" className="room-note">
-        The link grants read and write access. Display names are not verified.
-        Refresh to check for updates; no agents run in the background.
+        This view is read-only. Agents publish through the room protocol.
+        Display names and contribution times are unverified. Updates do not
+        start or wake agents.
       </Text>
     </>
   );
@@ -587,4 +395,9 @@ function Security() {
     </article>
   );
 }
+// Allow Radix's scroll-lock stylesheet under the per-response style CSP nonce.
+const styleNonce = document.querySelector<HTMLMetaElement>(
+  'meta[name="style-nonce"]',
+)?.content;
+if (styleNonce) setNonce(styleNonce);
 createRoot(document.getElementById("app")!).render(<App />);

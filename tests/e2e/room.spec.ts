@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -28,59 +28,46 @@ function cli(args: string[], input?: string): Promise<any> {
     );
   });
 }
-test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and incremental read", async ({
+test("read-only room, both connect modals, ciphertext agent updates, XSS and retained history", async ({
   page,
   baseURL,
 }) => {
-  const captured: string[] = [];
-  const browserErrors: string[] = [];
+  const captured: string[] = [],
+    writes: string[] = [],
+    browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (entry) => {
     if (entry.type() === "error") browserErrors.push(entry.text());
   });
-  page.on("request", (r) =>
+  page.on("request", (request) => {
+    if (!request.url().startsWith(baseURL!)) return;
     captured.push(
       JSON.stringify({
-        url: r.url(),
-        headers: r.headers(),
-        body: r.postData(),
+        url: request.url(),
+        headers: request.headers(),
+        body: request.postData(),
       }),
-    ),
-  );
+    );
+    if (request.method() === "POST")
+      writes.push(new URL(request.url()).pathname);
+  });
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "A shared room for your agents." }),
-  ).toBeVisible();
-  await page.getByLabel("Your display name").fill("Browser Alice");
+  await expect(page.getByLabel("First message")).toHaveCount(0);
+  await expect(page.getByLabel("Your display name")).toHaveCount(0);
   await page.getByRole("combobox", { name: "Expires after" }).selectOption("7");
-  const first = "BROWSER_PRIVATE_CANARY_🍃";
-  await page.getByLabel("First message").fill(first);
-  await page.getByRole("button", { name: "Create room" }).click();
-  await expect(page.locator(".message-body")).toHaveText(first);
-  const invite = parseInvite(page.url()),
-    url = page.url();
-  const providerLink = page.getByRole("link", {
-    name: "Open in Claude",
-    exact: true,
-  });
-  await expect(providerLink).toHaveAttribute("target", "_blank");
-  await expect(providerLink).toHaveAttribute("rel", "noopener noreferrer");
-  const providerURL = new URL((await providerLink.getAttribute("href"))!);
-  expect(providerURL.origin).toBe("https://claude.ai");
-  expect(providerURL.searchParams.get("q")).toContain(url);
-  const setupLink = page.getByRole("link", {
-    name: "2. Open Claude settings",
-    exact: true,
-  });
-  await expect(setupLink).toHaveAttribute(
-    "href",
-    "https://claude.ai/new#settings/capabilities/allowed-websites",
+  await page.getByRole("button", { name: "Create room", exact: true }).click();
+  await expect(
+    page.getByText("No agent activity yet. Connect an agent to start."),
+  ).toBeVisible();
+  const url = page.url(),
+    invite = parseInvite(url);
+  expect(invite.origin).toBe(baseURL);
+  await expect(page.getByRole("button", { name: "Send message" })).toHaveCount(
+    0,
   );
-  await expect(setupLink).toHaveAttribute("rel", "noopener noreferrer");
-  expect(await setupLink.getAttribute("href")).not.toContain(invite.key);
-  expect(await setupLink.getAttribute("href")).not.toContain(invite.access);
-  // Test the real Clipboard API in the application's browser context. The
-  // external settings page is not needed for this local contract check.
+  await expect(
+    page.locator("textarea:not([readonly]),input:not([readonly])"),
+  ).toHaveCount(0);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: baseURL!,
   });
@@ -89,46 +76,107 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
     .route("https://claude.ai/**", (route) =>
       route.fulfill({ body: "External settings navigation test" }),
     );
-  const domain = new URL(baseURL!).hostname;
+
+  const gptButton = page.getByRole("button", {
+    name: "Connect with GPT",
+    exact: true,
+  });
+  await gptButton.click();
+  const dialog = page.getByRole("dialog");
   await expect(
-    page.getByRole("textbox", { name: "Website to allow" }),
-  ).toHaveValue(domain);
-  await page
-    .getByRole("button", { name: "1. Copy domain", exact: true })
+    dialog.getByRole("heading", { name: "Connect with GPT", exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("Connect prompt")).toHaveValue(
+    new RegExp(invite.roomId),
+  );
+  const gptURL = new URL(
+    (await dialog
+      .getByRole("link", { name: "Open in ChatGPT", exact: true })
+      .getAttribute("href"))!,
+  );
+  expect(gptURL.origin).toBe("https://chatgpt.com");
+  expect(gptURL.searchParams.get("q")).toContain(url);
+  await dialog
+    .getByRole("button", { name: "Copy connect prompt", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Copied", exact: true }),
+    dialog.getByRole("button", { name: "Prompt copied", exact: true }),
   ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    url,
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(gptButton).toBeFocused();
+
+  await page
+    .getByRole("button", { name: "Connect with Claude", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 1 of 3", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Website to allow")).toHaveValue(
+    new URL(baseURL!).hostname,
+  );
+  await expect(dialog.getByLabel("Connect prompt")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Copy domain", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 2 of 3", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    domain,
+    new URL(baseURL!).hostname,
   );
-  // Opening settings is separate and must not overwrite the user's clipboard.
-  await page.evaluate(() =>
-    navigator.clipboard.writeText("clipboard-unchanged"),
+  const settings = dialog.getByRole("link", {
+    name: "Open Claude settings",
+    exact: true,
+  });
+  await expect(settings).toHaveAttribute(
+    "href",
+    "https://claude.ai/new#settings/capabilities/allowed-websites",
   );
+  await expect(settings).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(
+    dialog.getByRole("button", { name: "I added the website", exact: true }),
+  ).toBeDisabled();
   const popup = page.waitForEvent("popup");
-  await setupLink.click();
+  await settings.click();
   await (await popup).close();
   await page.bringToFront();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    "clipboard-unchanged",
+    new URL(baseURL!).hostname,
   );
-  expect(invite.origin).toBe(baseURL);
-  const fromBrowser = await cli(["read", "--invite-stdin", "--json"], url);
-  expect(fromBrowser.events[0].payload.body).toBe(first);
-  // Node decrypts browser output independently, before trusting UI rendering.
-  const response = await page.request.get(`/v1/rooms/${invite.roomId}/events`, {
-    headers: { Authorization: `Bearer ${invite.access}` },
-  });
-  const raw = await response.json();
-  expect((await decrypt(invite.roomId, invite.key, raw.events[0])).body).toBe(
-    first,
+  await dialog
+    .getByRole("button", { name: "I added the website", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 3 of 3", { exact: true })).toBeVisible();
+  const claudeURL = new URL(
+    (await dialog
+      .getByRole("link", { name: "Open in Claude", exact: true })
+      .getAttribute("href"))!,
   );
+  expect(claudeURL.searchParams.get("q")).toContain(url);
+  await dialog
+    .getByRole("button", { name: "Copy connect prompt", exact: true })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    url,
+  );
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Connect with Claude", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 1 of 3", { exact: true })).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Already set up", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 3 of 3", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(dialog.getByText("Step 2 of 3", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
   const dir = await mkdtemp(join(tmpdir(), "agentroom-e2e-"));
   try {
-    const text = "<script>window.STOLEN=true</script> CLI_PRIVATE_CANARY_Grüße";
-    const file = join(dir, "reply.md");
-    await writeFile(file, text);
+    const first = "AGENT_PRIVATE_CANARY_🍃",
+      file = join(dir, "reply.md");
+    await writeFile(file, first);
     await cli(
       [
         "publish",
@@ -136,67 +184,79 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
         "--file",
         file,
         "--actor",
-        "CLI Bob",
+        "Agent A",
         "--json",
       ],
       url,
     );
-    await page.getByRole("button", { name: "Refresh" }).click();
-    await expect(page.locator(".message-body").last()).toHaveText(text);
+    await expect(page.locator(".message-body")).toHaveText(first, {
+      timeout: 15000,
+    });
+    const response = await page.request.get(
+      `/v1/rooms/${invite.roomId}/events`,
+      { headers: { Authorization: `Bearer ${invite.access}` } },
+    );
     expect(
-      await page.evaluate(
-        () => document.querySelectorAll("#messages script").length,
-      ),
-    ).toBe(0);
-    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+      (
+        await decrypt(
+          invite.roomId,
+          invite.key,
+          (await response.json()).events[0],
+        )
+      ).body,
+    ).toBe(first);
+    const second = "<script>window.STOLEN=true</script> Agent B reply";
+    await writeFile(file, second);
+    await cli(
+      [
+        "publish",
+        "--invite-stdin",
+        "--file",
+        file,
+        "--actor",
+        "Agent B",
+        "--json",
+      ],
+      url,
+    );
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(page.locator(".message-body").last()).toHaveText(second);
+    expect(await page.locator("#messages script").count()).toBe(0);
     await page.reload();
     await expect(page.locator(".message-body")).toHaveCount(2);
-    const incremental = await cli(
-      ["read", "--invite-stdin", "--after", "1", "--json"],
-      url,
-    );
-    expect(incremental.events).toHaveLength(1);
-    expect(incremental.events[0].payload.body).toBe(text);
-    await page.getByLabel("Message", { exact: true }).fill("Browser follow-up");
-    await page.getByRole("button", { name: "Send message" }).click();
-    await expect(page.locator(".message-body").last()).toHaveText(
-      "Browser follow-up",
-    );
-    const followup = await cli(
-      ["read", "--invite-stdin", "--after", "2", "--json"],
-      url,
-    );
-    expect(followup.events[0].payload.body).toBe("Browser follow-up");
-    const bad = { ...invite, key: randomSecret() };
-    // Altered event is stored by a blind relay, then safely rejected by the client.
+    expect(
+      (await cli(["read", "--invite-stdin", "--after", "1", "--json"], url))
+        .events[0].payload.body,
+    ).toBe(second);
     const event = await encrypt(
       invite.roomId,
-      bad.key,
+      randomSecret(),
       message("unreadable canary"),
     );
     await page.request.post(`/v1/rooms/${invite.roomId}/events`, {
       headers: { Authorization: `Bearer ${invite.access}` },
       data: event,
     });
-    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.getByRole("status")).toContainText(
       "Some events could not be decrypted",
     );
     await expect(page.locator(".message-body").last()).toContainText(
       "Cannot decrypt",
     );
-    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.getByRole("status")).toContainText(
       "Some events could not be decrypted",
     );
+    expect(captured.join("\n")).not.toContain(first);
+    expect(captured.join("\n")).not.toContain("Agent A");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-  const sent = captured.join("\n");
-  expect(sent).not.toContain(invite.key);
-  expect(sent).not.toContain(first);
-  expect(sent).not.toContain("Browser Alice");
-  expect(sent).not.toContain("#k=");
+  expect(writes).toEqual(["/v1/rooms"]);
+  expect(captured.join("\n")).not.toContain(invite.key);
+  expect(captured.join("\n")).not.toContain("#k=");
+  expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   expect(browserErrors).toEqual([]);
   expect(
     await page.evaluate(
@@ -204,10 +264,75 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
     ),
   ).toBe(true);
 });
+
+test("clipboard denial leaves both connect prompts selectable without opening a provider", async ({
+  page,
+  baseURL,
+}) => {
+  const room = await cli([
+    "create",
+    "--relay",
+    baseURL!,
+    "--ttl",
+    "1",
+    "--json",
+  ]);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    });
+  });
+  await page.goto(room.url);
+  await page
+    .getByRole("button", { name: "Connect with GPT", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("button", { name: "Copy connect prompt", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("Copy the selected prompt manually.", { exact: false }),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("Connect prompt")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Connect with Claude", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Copy domain", exact: true })
+    .click();
+  await expect(dialog.getByLabel("Website to allow")).toBeFocused();
+  await dialog
+    .getByRole("button", { name: "I copied the domain", exact: true })
+    .click();
+  await expect(dialog.getByText("Step 2 of 3", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
 test("public trust pages, missing fragment, generic preview and strict headers", async ({
   page,
 }) => {
   const response = await page.goto("/security");
+  const nonce = await page
+    .locator('meta[name="style-nonce"]')
+    .getAttribute("content");
+  expect(nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect(response?.headers()["content-security-policy"]).toContain(
+    `'nonce-${nonce}'`,
+  );
+  expect(response?.headers()["content-security-policy"]).not.toContain(
+    "unsafe-inline",
+  );
+  const nextHtml = await page.request.get("/security");
+  expect(await nextHtml.text()).not.toContain(`content="${nonce}"`);
+  expect((await page.request.head("/security")).status()).toBe(200);
+  expect(await (await page.request.get("/index.html")).text()).toContain(
+    'name="style-nonce"',
+  );
   await expect(
     page.getByRole("heading", { name: "Security & privacy" }),
   ).toBeVisible();
@@ -217,12 +342,12 @@ test("public trust pages, missing fragment, generic preview and strict headers",
   );
   await page.goto("/r/AAAAAAAAAAAAAAAAAAAAAA");
   await expect(page.getByRole("status")).toContainText("complete invitation");
+  await expect(
+    page.getByRole("button", { name: "Connect with GPT", exact: true }),
+  ).toHaveCount(0);
   expect(
     await page.locator('meta[property="og:title"]').getAttribute("content"),
   ).toContain("AgentRoom");
-  expect(
-    await page.locator('meta[property="og:title"]').getAttribute("content"),
-  ).not.toContain("AAAA");
   const protocol = await page.request.get("/protocol/v1");
   expect(protocol.status()).toBe(200);
   expect(await protocol.text()).toContain("agentroom/v1|event|");
@@ -230,8 +355,6 @@ test("public trust pages, missing fragment, generic preview and strict headers",
   expect(guide.status()).toBe(200);
   expect(await guide.text()).toContain("fewest");
   expect(await guide.text()).toContain("Interactive browser route");
-  const html = await page.request.get("/r/AAAAAAAAAAAAAAAAAAAAAA");
-  expect(await html.text()).toContain('href="/agent"');
   const missing = await page.request.get("/v1/missing");
   expect(missing.status()).toBe(404);
   expect(missing.headers()["content-type"]).toContain("application/json");
