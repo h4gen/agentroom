@@ -13,8 +13,9 @@ import {
 // The suite models several independent agents from one IP. Preserve production
 // limits and stagger projects rather than weakening the limiter for acceptance.
 test.beforeAll(async ({}, info) => {
+  test.setTimeout(75_000);
   if (info.project.name === "mobile")
-    await new Promise((resolve) => setTimeout(resolve, 35_000));
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
 });
 function cli(args: string[], input?: string): Promise<any> {
   return new Promise((resolve, reject) => {
