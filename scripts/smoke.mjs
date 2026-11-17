@@ -41,7 +41,16 @@ for (const route of [
   "/favicon.svg",
   "/r/AAAAAAAAAAAAAAAAAAAAAA",
 ]) {
-  const response = await fetch(origin + route, { redirect: "error" });
+  let response;
+  // A brand-new workers.dev route can briefly return 404 during propagation.
+  // Bound retries to public-route readiness; retained room data must still pass immediately.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    response = await fetch(origin + route, { redirect: "error" });
+    if (response.ok || (response.status !== 404 && response.status < 500))
+      break;
+    if (attempt < 3)
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+  }
   check(response.ok, `Public route failed: ${route}`);
   check(
     response.headers.get("Referrer-Policy") === "no-referrer",
