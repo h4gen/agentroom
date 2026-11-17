@@ -297,7 +297,7 @@ function Room({ opening }: { opening: Opening }) {
           <Text as="p" size="2" color="gray">
             {expires
               ? `Expires ${new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
-              : "The full invitation link is required."}
+              : client ? "Opening room…" : "The full invitation link is required."}
           </Text>
         </div>
         <Badge color="gray" variant="outline">
@@ -348,7 +348,7 @@ function Room({ opening }: { opening: Opening }) {
         <div id="messages">
           {records.length === 0 ? (
             <Text as="p" color="gray" size="2" className="empty">
-              No messages yet.
+              {client && !expires ? "Loading messages…" : "No messages yet."}
             </Text>
           ) : (
             records.map((event) => (
