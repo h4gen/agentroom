@@ -445,6 +445,26 @@ test("browser-only signed contributions, immutable file exchange, identity conti
     { name: "BROWSER_FILE_CANARY.csv", mimeType: "text/csv", buffer: csv },
     { name: "report<script>.pdf", mimeType: "application/pdf", buffer: pdf },
   ]);
+  // A failed background/manual metadata read must not unmount the composer or
+  // lose its selected files / prepared operation.
+  let metadataFailures = 3;
+  await page.route("**/v2/rooms/*", async (route) => {
+    if (metadataFailures && route.request().method() === "GET") {
+      metadataFailures--;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByText("Room activity could not be checked. Reconnecting…", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Contribution", { exact: true })).toHaveValue(
+    "BROWSER_BODY_CANARY_42",
+  );
+  await page.unroute("**/v2/rooms/*");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await page
     .getByRole("button", { name: "Publish contribution", exact: true })
     .click();

@@ -14,6 +14,7 @@ export function useRoom(client: RoomClient | undefined) {
   const [expires, setExpires] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
   const cursor = useRef(0);
   const events = useRef(new Map<number, ReadEvent>());
   const inFlight = useRef(false);
@@ -54,6 +55,7 @@ export function useRoom(client: RoomClient | undefined) {
             [404, 409, 410].includes(failure.status)
           ) {
             terminal.current = true;
+            setUnavailable(true);
             setError(
               failure.status === 409
                 ? "This room uses an older protocol. Create a new room."
@@ -105,5 +107,5 @@ export function useRoom(client: RoomClient | undefined) {
       document.removeEventListener("visibilitychange", resume);
     };
   }, [client, refresh]);
-  return { records, expires, busy, error, refresh };
+  return { records, expires, busy, error, unavailable, refresh };
 }

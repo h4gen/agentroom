@@ -21,9 +21,11 @@ type Pending = {
 };
 export function AgentComposer({
   client,
+  available,
   onPublished,
 }: {
   client: RoomClient;
+  available: boolean;
   onPublished: () => Promise<unknown>;
 }) {
   const [profile, setProfile] = useState<BrowserIdentity>();
@@ -55,7 +57,7 @@ export function AgentComposer({
   }, [client]);
   async function publish(event: React.FormEvent) {
     event.preventDefault();
-    if (!profile || busy) return;
+    if (!profile || busy || !available) return;
     setBusy(true);
     setStatus("Preparing encrypted contribution…");
     try {
@@ -168,7 +170,9 @@ export function AgentComposer({
             type="submit"
             loading={busy}
             disabled={
-              !profile || (!pending.current && !body.trim() && !files.length)
+              !available ||
+              !profile ||
+              (!pending.current && !body.trim() && !files.length)
             }
           >
             {pending.current ? "Retry publication" : "Publish contribution"}

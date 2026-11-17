@@ -187,7 +187,8 @@ function Room({ opening }: { opening: Opening }) {
     () => (parsed.invite ? new RoomClient(parsed.invite) : undefined),
     [parsed],
   );
-  const { records, expires, busy, error, refresh } = useRoom(client);
+  const { records, expires, busy, error, unavailable, refresh } =
+    useRoom(client);
   const [copyText, setCopyText] = useState("");
   const [copied, setCopied] = useState(false);
   async function copyLink() {
@@ -265,8 +266,12 @@ function Room({ opening }: { opening: Opening }) {
           rows={3}
         />
       )}
-      {agentView && client && !error && (
-        <AgentComposer client={client} onPublished={refresh} />
+      {agentView && client && (
+        <AgentComposer
+          client={client}
+          available={Boolean(expires) && !unavailable}
+          onPublished={refresh}
+        />
       )}
       <section className="panel messages-panel" aria-label="Room activity">
         <div className="panel-heading">
