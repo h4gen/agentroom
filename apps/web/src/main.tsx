@@ -18,7 +18,11 @@ import {
   RoomClient,
 } from "../../../packages/protocol/src/client.ts";
 import { parseInvite } from "../../../packages/protocol/src/index.ts";
-import { agentPrompt, claudeWebURL } from "./invitations.ts";
+import {
+  agentPrompt,
+  claudeWebURL,
+  CLAUDE_NETWORK_SETTINGS,
+} from "./invitations.ts";
 
 const SOURCE = "https://github.com/h4gen/agentroom";
 type ReadEvent = Awaited<ReturnType<RoomClient["read"]>>["events"][number];
@@ -285,6 +289,19 @@ function Room({ opening }: { opening: Opening }) {
       setStatus("Copy the selected text below.");
     }
   }
+  async function copySetupDomain() {
+    try {
+      await navigator.clipboard.writeText(location.hostname);
+      setStatus(
+        "Server domain copied. In Claude, paste it into Add a website and click Add.",
+      );
+    } catch {
+      setCopyText(location.hostname);
+      setStatus(
+        "Copy the server domain below. In Claude, paste it into Add a website and click Add.",
+      );
+    }
+  }
   const instructions = parsed.invite ? agentPrompt(opening.url) : "";
   return (
     <>
@@ -328,6 +345,18 @@ function Room({ opening }: { opening: Opening }) {
             </a>
           </Button>
         )}
+        {client && (
+          <Button asChild color="gray" variant="surface">
+            <a
+              href={CLAUDE_NETWORK_SETTINGS}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => void copySetupDomain()}
+            >
+              Configure Claude
+            </a>
+          </Button>
+        )}
         <Button
           color="gray"
           variant="surface"
@@ -341,7 +370,9 @@ function Room({ opening }: { opening: Opening }) {
       {client && (
         <Text as="p" size="1" color="gray" className="room-note">
           Open in Claude shares this private room link with Claude in a prepared
-          message. Review and send it there.
+          message. Review and send it there. Configure Claude opens Allowed
+          websites and copies this server’s domain for you to paste and add.
+          Only needed if network access is blocked.
         </Text>
       )}
       <Status text={status} />

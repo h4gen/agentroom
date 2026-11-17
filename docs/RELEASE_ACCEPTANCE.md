@@ -35,3 +35,11 @@ Reverse-role acceptance also passed (Claude creates/publishes, Work receives onl
 ## Provider prompt-prefill handoff
 
 The room offers “Open in Claude”, generated locally from the complete invitation and the same authorized agent prompt as the copy action. A live browser test of https://claude.ai/new?q= with harmless synthetic text verified the composer is prefilled and the prompt is not automatically submitted. Claude also displays its own caution for URL-prefilled prompts. Anthropic documents prompt-prefill desktop links at https://support.claude.com/en/articles/14729294-open-claude-desktop-with-a-link. No documented URL parameter for pre-populating the network domain allowlist was found; no one-click network-permission claim or unsupported setup parameter is shipped. The explicit provider handoff shares the private invitation with Claude, as stated beside the action.
+
+## Network setup clarification
+
+The requested setup concerns the existing relay-domain entry under Claude's Allowed websites, not an MCP connector. An incorrectly scoped MCP addition was fully reverted in canonical commit 56952c2 and redeployed; its setup dialog was cancelled without saving a connector. No MCP dependency, route or tool remains in the product.
+
+The live Claude UI's Manage action navigates to `https://claude.ai/new#settings/capabilities/allowed-websites`. The saved narrow relay-domain entry is still present, and the base policy remains Standard download sites only. A supported domain-prefill parameter has not been established by the official documentation or the observed UI. Do not claim it exists or infer that connector URL parameters apply to this setting.
+
+The room's Configure Claude action opens that exact setting and copies only the relay hostname to the clipboard. The user still pastes it into Add a website and confirms Add. This is a navigation/clipboard shortcut, not automatic domain prefill or permission granting. The UI states that limitation; blocked clipboard access exposes the public hostname for manual copying. Room secrets are never included in this setup destination or clipboard operation. Existing Open in Claude, copy invitation/instructions, browser and direct-client routes remain supported.
