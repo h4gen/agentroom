@@ -33,6 +33,11 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   baseURL,
 }) => {
   const captured: string[] = [];
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (entry) => {
+    if (entry.type() === "error") browserErrors.push(entry.text());
+  });
   page.on("request", (r) =>
     captured.push(
       JSON.stringify({
@@ -44,12 +49,13 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   );
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Your agents. One shared room." }),
+    page.getByRole("heading", { name: "A shared room for your agents." }),
   ).toBeVisible();
   await page.getByLabel("Your display name").fill("Browser Alice");
+  await page.getByRole("combobox", { name: "Expires after" }).selectOption("7");
   const first = "BROWSER_PRIVATE_CANARY_🍃";
-  await page.getByLabel("What are you working on?").fill(first);
-  await page.getByRole("button", { name: "Create private room" }).click();
+  await page.getByLabel("First message").fill(first);
+  await page.getByRole("button", { name: "Create room" }).click();
   await expect(page.locator(".message-body")).toHaveText(first);
   const invite = parseInvite(page.url()),
     url = page.url();
@@ -97,6 +103,16 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
     );
     expect(incremental.events).toHaveLength(1);
     expect(incremental.events[0].payload.body).toBe(text);
+    await page.getByLabel("Message", { exact: true }).fill("Browser follow-up");
+    await page.getByRole("button", { name: "Send message" }).click();
+    await expect(page.locator(".message-body").last()).toHaveText(
+      "Browser follow-up",
+    );
+    const followup = await cli(
+      ["read", "--invite-stdin", "--after", "2", "--json"],
+      url,
+    );
+    expect(followup.events[0].payload.body).toBe("Browser follow-up");
     const bad = { ...invite, key: randomSecret() };
     // Altered event is stored by a blind relay, then safely rejected by the client.
     const event = await encrypt(
@@ -115,6 +131,10 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
     await expect(page.locator(".message-body").last()).toContainText(
       "Cannot decrypt",
     );
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Some events could not be decrypted",
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -123,6 +143,7 @@ test("browser ↔ standalone CLI: crypto, XSS, invitation secrecy, reload and in
   expect(sent).not.toContain(first);
   expect(sent).not.toContain("Browser Alice");
   expect(sent).not.toContain("#k=");
+  expect(browserErrors).toEqual([]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -134,7 +155,7 @@ test("public trust pages, missing fragment, generic preview and strict headers",
 }) => {
   const response = await page.goto("/security");
   await expect(
-    page.getByRole("heading", { name: "Private, with clear boundaries." }),
+    page.getByRole("heading", { name: "Security & privacy" }),
   ).toBeVisible();
   expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
   expect(response?.headers()["content-security-policy"]).toContain(

@@ -12,7 +12,7 @@ Build dependencies are pinned in package.json/pnpm-lock.yaml. Miniflare is pinne
 
 1. Fetch origin; resolve canonical `main`. Inspect `git status`, branches, `git worktree list`, open AgentRoom task state and the current live/last-accepted behavior. Coordinate any overlaps. Do not touch another task's files.
 2. Integrate every accepted relevant change on main. Compare source/content/routes/protocol, not just current changed files. Retain `/`, `/security`, `/r/:id`, `/protocol/v1`, favicon/static assets and all four API operations. A newly initialized project has no prior accepted surface; subsequent releases do.
-3. Push main. `pnpm deploy` rejects a dirty checkout, another branch, or a main divergent from a fresh fetch. It runs type/API/crypto/browser checks, rechecks remote main, deploys and runs live smoke.
+3. Push main. `pnpm run deploy` rejects a dirty checkout, another branch, or a main divergent from a fresh fetch. It runs type/API/crypto/browser checks, rechecks remote main, deploys and runs live smoke.
 4. `pnpm smoke` checks the previously accepted synthetic room (when the local state is available), public routes, private headers, API misses and a fresh two-process encrypted exchange. If prior smoke data has expired, explicitly inspect its TTL before archiving only that owned local fixture and creating a new baseline. Never silently ignore missing accepted live data.
 5. Re-run desktop/mobile browser tests against live with `AGENTROOM_TEST_URL=https://agentroom-v0.hagen-hoferichter.workers.dev pnpm test:e2e`. Respect creation rate limits when repeating quickly.
 6. Record canonical SHA, Worker version, live checks, platform status and worktree ownership/cleanup. A feature branch, preview or commit alone is not delivery.

@@ -12,7 +12,7 @@ Accepted 17 November 2026. Source: PRD.md. Deliver in a new folder /Users/hagen/
 
 ## Explicit decisions
 
-V0 messages only, no R2 artifacts, auth accounts, connectors, cloud LLM, MCP/WebMCP/A2A, schedules, push, identity or key rotation. V0.1 files remain a separate milestone. Node >=22.12 replaces PRD's unsupported Node 20 baseline. Browser no framework, no remote fonts/assets, no persistent plaintext/key cache. On provider limitation, finish technical V0 and mark the exact provider path blocked/unverified.
+V0 messages only, no R2 artifacts, auth accounts, connectors, cloud LLM, MCP/WebMCP/A2A, schedules, push, identity or key rotation. V0.1 files remain a separate milestone. Node >=22.12 replaces PRD's unsupported Node 20 baseline. At the user’s explicit design correction, the browser uses React and Radix Themes: neutral black/white, system typography and blue as the sole accent; no illustrative hero or decorative marketing layout. No remote fonts/assets or persistent plaintext/key cache. On provider limitation, finish technical V0 and mark the exact provider path blocked/unverified.
 
 Room TTL integer 1–30 days, default 14; 2,000 events, 64 KiB/event, 100/page. Exact request bytes define retry idempotency; duplicate success is 200 and new insertion 201. The client retries at most three times with unchanged bytes. Post-expiry 410 before cleanup, 404 after cleanup. Hash-only capability storage; K never enters HTTP.
 

@@ -49,7 +49,7 @@ Open http://localhost:8787. A second terminal can use `pnpm cli create --relay h
 
 - `packages/protocol`: AES-GCM, base64url, invitations, event validation and HTTP client.
 - `packages/agent-cli`: Node reference CLI, bundled to one versioned file.
-- `apps/web`: static, responsive browser client; no framework, remote scripts or tracking.
+- `apps/web`: static, responsive React/Radix UI client; no remote scripts, fonts or tracking.
 - `apps/relay`: Worker routing/authentication and one SQLite-backed Durable Object per room.
 - `docs`: [protocol](docs/PROTOCOL_V1.md), [security model](docs/SECURITY_MODEL.md), [platform matrix](docs/PLATFORM_TEST_MATRIX.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md), original [PRD](docs/PRD.md), and [operations](docs/OPERATIONS.md).
 
@@ -67,6 +67,6 @@ Ask your AI to review the source critically: inspect crypto/AAD, capability hand
 
 MIT licensed. Host using your own Cloudflare account with SQLite-backed Durable Objects. No R2, paid AI API, login database or external analytics is required for V0. Actual Cloudflare costs depend on your plan and usage; no zero-cost claim is made.
 
-`main` is canonical. `pnpm deploy` refuses a dirty/non-main/remote-divergent checkout, rebuilds the integrated source, deploys and smoke-tests it. See [operations](docs/OPERATIONS.md) for cumulative-release checks, retained-room checks and restricted release handling. User-facing “complete” status requires integration on canonical main and successful live verification.
+`main` is canonical. `pnpm run deploy` refuses a dirty/non-main/remote-divergent checkout, rebuilds the integrated source, deploys and smoke-tests it. See [operations](docs/OPERATIONS.md) for cumulative-release checks, retained-room checks and restricted release handling. User-facing “complete” status requires integration on canonical main and successful live verification.
 
 Report security concerns using GitHub private vulnerability reporting where available; never post a complete invitation in a public issue. For abuse reports, provide only the room ID, never the fragment. See [SECURITY.md](SECURITY.md).

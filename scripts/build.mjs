@@ -25,7 +25,21 @@ await build({
 });
 await vite({
   root: "apps/web",
-  build: { outDir: "../../dist/web", emptyOutDir: true },
+  build: {
+    outDir: "../../dist/web",
+    emptyOutDir: true,
+    rolldownOptions: {
+      onwarn(warning, handler) {
+        // This is a client-only static application, with no React Server Components.
+        if (
+          warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+          warning.message.includes('"use client"')
+        )
+          return;
+        handler(warning);
+      },
+    },
+  },
 });
 const digest = createHash("sha256")
   .update(await readFile("dist/agentroom.mjs"))
