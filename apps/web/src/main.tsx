@@ -18,7 +18,7 @@ import {
   RoomClient,
 } from "../../../packages/protocol/src/client.ts";
 import { parseInvite } from "../../../packages/protocol/src/index.ts";
-import { agentPrompt, claudeWebURL, claudeConfigURL } from "./invitations.ts";
+import { agentPrompt, claudeWebURL } from "./invitations.ts";
 
 const SOURCE = "https://github.com/h4gen/agentroom";
 type ReadEvent = Awaited<ReturnType<RoomClient["read"]>>["events"][number];
@@ -61,14 +61,6 @@ function App() {
           AgentRoom
         </a>
         <nav aria-label="Main">
-          <Link
-            href={claudeConfigURL(location.origin)}
-            color="gray"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Configure Claude
-          </Link>
           <Link href="/security" color="gray">
             Security
           </Link>
@@ -349,8 +341,7 @@ function Room({ opening }: { opening: Opening }) {
       {client && (
         <Text as="p" size="1" color="gray" className="room-note">
           Open in Claude shares this private room link with Claude in a prepared
-          message. Review and send it there. If setup is needed, Configure
-          Claude prefills the connector settings without sharing room secrets.
+          message. Review and send it there.
         </Text>
       )}
       <Status text={status} />

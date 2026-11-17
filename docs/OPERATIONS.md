@@ -6,12 +6,12 @@ Node >=22.12, pinned pnpm, and `wrangler login` for deployment. No application s
 
 `wrangler.jsonc` creates one new SQLite Durable Object class through `new_sqlite_classes`. Existing namespaces/rooms survive subsequent script deployments. Application tables initialize only during explicit room creation. Future schema migrations must be additive and versioned; never replace the namespace to deploy a UI change. There is no R2 binding in V0.
 
-Build dependencies are pinned in package.json/pnpm-lock.yaml. Miniflare is pinned to the exact version bundled by Wrangler so integration tests use the same Workers runtime generation. Python is a test-only independent crypto implementation. The optional ciphertext MCP transport uses the official MCP TypeScript SDK. Build regenerates the tracked `apps/relay/src/mcp-local-client.txt` from shared protocol/offline sources; include deterministic regenerated changes when changing crypto. The CLI stays dependency-free.
+Build dependencies are pinned in package.json/pnpm-lock.yaml. Miniflare is pinned to the exact version bundled by Wrangler so integration tests use the same Workers runtime generation. Python is a test-only independent crypto implementation.
 
 ## Cumulative deployment preflight
 
 1. Fetch origin; resolve canonical `main`. Inspect `git status`, branches, `git worktree list`, open AgentRoom task state and the current live/last-accepted behavior. Coordinate any overlaps. Do not touch another task's files.
-2. Integrate every accepted relevant change on main. Compare source/content/routes/protocol, not just current changed files. Retain `/`, `/security`, `/r/:id`, `/agent`, `/protocol/v1`, `/mcp`, favicon/static assets and all four API operations. A newly initialized project has no prior accepted surface; subsequent releases do.
+2. Integrate every accepted relevant change on main. Compare source/content/routes/protocol, not just current changed files. Retain `/`, `/security`, `/r/:id`, `/agent`, `/protocol/v1`, favicon/static assets and all four API operations. A newly initialized project has no prior accepted surface; subsequent releases do.
 3. Push main. `pnpm run deploy` rejects a dirty checkout, another branch, or a main divergent from a fresh fetch. It runs type/API/crypto/browser checks, rechecks remote main, deploys and runs live smoke.
 4. `pnpm smoke` checks the previously accepted synthetic room (when the local state is available), public routes, private headers, API misses and a fresh two-process encrypted exchange. If prior smoke data has expired, explicitly inspect its TTL before archiving only that owned local fixture and creating a new baseline. Never silently ignore missing accepted live data.
 5. Re-run desktop/mobile browser tests against live with `AGENTROOM_TEST_URL=https://agentroom-v0.hagen-hoferichter.workers.dev pnpm test:e2e`. Respect creation rate limits when repeating quickly.
